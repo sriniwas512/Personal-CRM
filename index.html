@@ -55,6 +55,7 @@
         .app-header .user-pill { font-size: 13px; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
         .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
         .sync-badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
+        .author-tag { color: #fff; font-weight: 700; font-size: 10px; margin-left: 4px; opacity: 0.8; }
         .sync-syncing { background: rgba(122, 162, 247, 0.1); color: var(--primary); }
         .sync-ok { background: rgba(158, 206, 106, 0.1); color: var(--success); }
         .sync-err { background: rgba(247, 118, 142, 0.1); color: var(--danger); }
@@ -357,7 +358,7 @@ function renderLogin(err='') {
     document.getElementById('root').innerHTML = `
     <div class="login-wrap">
         <div class="login-card">
-            <div class="login-logo"><span>🔐</span><h1>Personal CRM</h1><p>Your private relationship manager</p></div>
+            <div class="login-logo"><span>🔐</span><h1>Personal CRM</h1><p>Your private relationship manager</p><p class="author-tag" style="margin-top:10px; font-size:12px;">Created by Sriniwas Ghate</p></div>
             <div class="login-hint">
                 Paste your <strong>GitHub Personal Access Token</strong> to sign in.<br>
                 Don't have one? <a href="https://github.com/settings/tokens/new?scopes=gist&description=Personal+CRM" target="_blank">Create one here</a>
@@ -421,7 +422,10 @@ function renderApp() {
     const po = overdueCount('personal'), bo = overdueCount('professional');
     document.getElementById('root').innerHTML = `
     <header class="app-header">
-        <h1>Personal CRM</h1>
+        <div style="display:flex; flex-direction:column;">
+            <h1>Personal CRM</h1>
+            <span class="author-tag">Created by Sriniwas Ghate</span>
+        </div>
         <span class="user-pill">@${esc(username)}</span>
         <div class="header-right">
             <span id="sync-badge" class="sync-badge sync-ok">✓ Synced</span>

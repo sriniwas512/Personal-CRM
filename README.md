@@ -1,3 +1,5 @@
+**Created by Sriniwas Ghate**
+
 # 🗄️ Personal CRM (Tokyo Night Edition)
 
 A high-performance, private, and exceptionally secure Personal Relationship Manager (CRM) built for individuals who prioritize data ownership. This is a "Bring Your Own Storage" application that uses your GitHub account as a secure, encrypted database.
