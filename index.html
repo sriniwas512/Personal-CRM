@@ -6,108 +6,120 @@
     <title>Personal CRM</title>
     <style>
         :root {
-            --primary:#2563eb; --primary-dark:#1d4ed8;
-            --danger:#dc2626; --success:#16a34a;
-            --bg:#f1f5f9; --border:#e2e8f0; --text:#1e293b; --text-muted:#64748b;
+            --primary: #7aa2f7; --primary-dark: #3d59a1;
+            --danger: #f7768e; --success: #9ece6a;
+            --bg: #1a1b26; --card: #1f2335; --border: #24283b; --text: #c0caf5; --text-muted: #565f89;
+            --input-bg: #24283b;
         }
-        *{margin:0;padding:0;box-sizing:border-box;}
-        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5; }
 
         /* LOGIN */
-        .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f2044 0%,#2563eb 100%);}
-        .login-card{background:#fff;border-radius:18px;padding:52px 44px;width:100%;max-width:440px;box-shadow:0 30px 60px rgba(0,0,0,.3);}
-        .login-logo{text-align:center;margin-bottom:32px;}
-        .login-logo span{font-size:42px;display:block;margin-bottom:10px;}
-        .login-logo h1{font-size:28px;font-weight:800;color:#0f2044;}
-        .login-logo p{color:var(--text-muted);font-size:14px;margin-top:4px;}
-        .login-hint{background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:13px 15px;font-size:13px;color:#1e40af;line-height:1.7;margin-bottom:20px;}
-        .login-hint a{color:#1d4ed8;}
-        .login-hint code{background:#dbeafe;padding:1px 5px;border-radius:4px;font-size:12px;}
+        .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #16161e; }
+        .login-card { background: var(--card); border-radius: 18px; padding: 52px 44px; width: 100%; max-width: 440px; box-shadow: 0 30px 60px rgba(0,0,0,.5); border: 1px solid var(--border); }
+        .login-logo { text-align: center; margin-bottom: 32px; }
+        .login-logo span { font-size: 42px; display: block; margin-bottom: 10px; }
+        .login-logo h1 { font-size: 28px; font-weight: 800; color: var(--primary); }
+        .login-logo p { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+        .login-hint { background: #24283b; border: 1px solid var(--primary); border-radius: 10px; padding: 13px 15px; font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 20px; }
+        .login-hint a { color: var(--primary); }
+        .login-hint code { background: #414868; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
         /* FORMS */
-        .form-group{margin-bottom:18px;}
-        .form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
-        .form-control{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:inherit;outline:none;transition:border-color .2s,box-shadow .2s;}
-        .form-control:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12);}
-        textarea.form-control{resize:vertical;min-height:80px;}
-        .error-msg{color:var(--danger);font-size:13px;margin-top:6px;}
+        .form-group { margin-bottom: 18px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-muted); }
+        .form-control { width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; outline: none; transition: all .2s; background: var(--input-bg); color: var(--text); }
+        .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.2); }
+        textarea.form-control { resize: vertical; min-height: 80px; }
+        .error-msg { color: var(--danger); font-size: 13px; margin-top: 6px; }
 
         /* BUTTONS */
-        .btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 22px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .18s;font-family:inherit;}
-        .btn-primary{background:var(--primary);color:#fff;width:100%;}
-        .btn-primary:hover{background:var(--primary-dark);}
-        .btn-primary:disabled{opacity:.6;cursor:not-allowed;}
-        .btn-cancel{background:#fff;color:var(--text);border:1.5px solid var(--border);}
-        .btn-cancel:hover{background:var(--bg);}
-        .btn-sm{padding:6px 13px;font-size:13px;border-radius:6px;font-weight:600;cursor:pointer;border:1.5px solid var(--border);background:#fff;color:var(--text-muted);transition:all .18s;font-family:inherit;}
-        .btn-sm:hover{border-color:var(--primary);color:var(--primary);}
-        .btn-sm.danger:hover{border-color:var(--danger);color:var(--danger);}
-        .btn-add{background:var(--primary);color:#fff;padding:9px 18px;border-radius:8px;font-size:14px;font-weight:600;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .18s;font-family:inherit;}
-        .btn-add:hover{background:var(--primary-dark);}
-        .btn-icon{background:none;border:1.5px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;transition:all .18s;color:var(--text-muted);font-family:inherit;}
-        .btn-icon:hover{border-color:var(--primary);color:var(--primary);background:#eff6ff;}
-        .btn-icon.delete:hover{border-color:var(--danger);color:var(--danger);background:#fef2f2;}
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 11px 22px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .18s; font-family: inherit; }
+        .btn-primary { background: var(--primary); color: #1a1b26; width: 100%; }
+        .btn-primary:hover { background: #89ddff; transform: translateY(-1px); }
+        .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+        .btn-cancel { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+        .btn-cancel:hover { background: var(--border); }
+        .btn-sm { padding: 6px 13px; font-size: 13px; border-radius: 6px; font-weight: 600; cursor: pointer; border: 1.5px solid var(--border); background: var(--card); color: var(--text-muted); transition: all .18s; font-family: inherit; }
+        .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-sm.danger:hover { border-color: var(--danger); color: var(--danger); }
+        .btn-add { background: var(--primary); color: #1a1b26; padding: 9px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; display: inline-flex; align-items: center; gap:6px; transition: all .18s; font-family: inherit; }
+        .btn-add:hover { background: #89ddff; }
+        .btn-icon { background: none; border: 1.5px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; transition: all .18s; color: var(--text-muted); font-family: inherit; }
+        .btn-icon:hover { border-color: var(--primary); color: var(--primary); background: rgba(122, 162, 247, 0.1); }
+        .btn-icon.delete:hover { border-color: var(--danger); color: var(--danger); background: rgba(247, 118, 142, 0.1); }
 
         /* HEADER */
-        .app-header{background:#fff;border-bottom:1px solid var(--border);padding:0 28px;display:flex;align-items:center;height:62px;box-shadow:0 1px 4px rgba(0,0,0,.07);gap:12px;}
-        .app-header h1{font-size:20px;font-weight:800;color:#0f2044;letter-spacing:-.3px;}
-        .app-header .user-pill{font-size:13px;color:var(--text-muted);background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 12px;}
-        .header-right{margin-left:auto;display:flex;gap:10px;align-items:center;}
-        .sync-badge{font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px;}
-        .sync-syncing{background:#eff6ff;color:var(--primary);}
-        .sync-ok{background:#f0fdf4;color:var(--success);}
-        .sync-err{background:#fef2f2;color:var(--danger);}
+        .app-header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 28px; display: flex; align-items: center; height: 62px; box-shadow: 0 2px 10px rgba(0,0,0,.3); gap: 12px; }
+        .app-header h1 { font-size: 20px; font-weight: 800; color: var(--primary); letter-spacing: -.3px; }
+        .app-header .user-pill { font-size: 13px; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
+        .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+        .sync-badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
+        .sync-syncing { background: rgba(122, 162, 247, 0.1); color: var(--primary); }
+        .sync-ok { background: rgba(158, 206, 106, 0.1); color: var(--success); }
+        .sync-err { background: rgba(247, 118, 142, 0.1); color: var(--danger); }
 
         /* TABS */
-        .tabs{display:flex;padding:0 28px;background:#fff;border-bottom:1px solid var(--border);}
-        .tab-btn{padding:15px 26px;background:none;border:none;border-bottom:3px solid transparent;font-size:15px;font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .18s;font-family:inherit;}
-        .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
-        .tab-badge{display:inline-flex;align-items:center;justify-content:center;background:#fee2e2;color:var(--danger);font-size:11px;font-weight:700;border-radius:10px;min-width:18px;height:18px;padding:0 5px;margin-left:6px;}
+        .tabs { display: flex; padding: 0 28px; background: var(--card); border-bottom: 1px solid var(--border); }
+        .tab-btn { padding: 15px 26px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 15px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all .18s; font-family: inherit; }
+        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+        .tab-badge { display: inline-flex; align-items: center; justify-content: center; background: var(--danger); color: #1a1b26; font-size: 11px; font-weight: 700; border-radius: 10px; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; }
 
         /* CONTENT */
-        .main-content{max-width:1200px;margin:0 auto;padding:28px;}
-        .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
-        .section-title{font-size:22px;font-weight:700;}
+        .main-content { max-width: 1200px; margin: 0 auto; padding: 28px; }
+        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+        .section-title { font-size: 22px; font-weight: 700; color: var(--text); }
 
         /* TABLE */
-        .contacts-wrapper{background:#fff;border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;border:1px solid var(--border);}
-        .table-scroll{overflow-x:auto;}
-        table{width:100%;border-collapse:collapse;min-width:780px;}
-        thead th{padding:12px 16px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;background:#f8fafc;border-bottom:1px solid var(--border);white-space:nowrap;}
-        tbody td{padding:13px 16px;border-bottom:1px solid var(--border);font-size:14px;vertical-align:middle;}
-        tbody tr:last-child td{border-bottom:none;}
-        tbody tr:hover td{background:#f8fafc;}
-        tbody tr.overdue-row td{background:#fff5f5;}
-        tbody tr.overdue-row:hover td{background:#feeaea;}
-        .contact-name{font-weight:700;}
-        .institution-text{color:var(--text-muted);font-size:13px;}
-        .status-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;}
-        .status-overdue{background:#fef2f2;color:#b91c1c;}
-        .status-due-soon{background:#fffbeb;color:#92400e;}
-        .status-upcoming{background:#f0fdf4;color:#166534;}
-        .notes-cell{max-width:220px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-        .action-btns{display:flex;gap:6px;}
-        .empty-state{text-align:center;padding:70px 20px;color:var(--text-muted);}
-        .empty-state .icon{font-size:52px;margin-bottom:14px;}
+        .contacts-wrapper { background: var(--card); border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.2); overflow: hidden; border: 1px solid var(--border); }
+        .table-scroll { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 780px; }
+        thead th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border); white-space: nowrap; }
+        tbody td { padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; color: var(--text); }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover td { background: rgba(255,255,255,0.02); }
+        tbody tr.overdue-row td { background: rgba(247, 118, 142, 0.05); }
+        tbody tr.overdue-row:hover td { background: rgba(247, 118, 142, 0.1); }
+        .contact-name { font-weight: 700; color: var(--primary); }
+        .institution-text { color: var(--text-muted); font-size: 13px; }
+        .status-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+        .status-overdue { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
+        .status-due-soon { background: rgba(224, 175, 104, 0.15); color: #e0af68; }
+        .status-upcoming { background: rgba(158, 206, 106, 0.15); color: var(--success); }
+        .notes-cell { max-width: 220px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
+        .action-btns { display: flex; gap: 6px; }
+        .empty-state { text-align: center; padding: 70px 20px; color: var(--text-muted); }
+        .empty-state .icon { font-size: 52px; margin-bottom: 14px; }
 
         /* MODAL */
-        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px;backdrop-filter:blur(2px);}
-        .modal{background:#fff;border-radius:18px;padding:34px 36px;width:100%;max-width:500px;box-shadow:0 30px 60px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto;}
-        .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
-        .modal-title{font-size:20px;font-weight:800;}
-        .modal-close{background:none;border:none;font-size:26px;cursor:pointer;color:var(--text-muted);line-height:1;}
-        .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:26px;}
-        .modal-footer .btn{width:auto;}
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; backdrop-filter: blur(4px); }
+        .modal { background: var(--card); border-radius: 18px; padding: 34px 36px; width: 100%; max-width: 600px; box-shadow: 0 30px 60px rgba(0,0,0,.5); border: 1px solid var(--border); max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .modal-title { font-size: 20px; font-weight: 800; color: var(--primary); }
+        .modal-close { background: none; border: none; font-size: 26px; cursor: pointer; color: var(--text-muted); line-height: 1; }
+        .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 26px; }
+        .modal-footer .btn { width: auto; }
+
+        /* NOTES LOG */
+        .notes-log { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
+        .note-entry { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; position: relative; }
+        .note-date { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 4px; display: block; }
+        .note-text { font-size: 13px; color: var(--text); white-space: pre-wrap; }
+        .note-delete { position: absolute; top: 8px; right: 8px; color: var(--text-muted); cursor: pointer; font-size: 16px; opacity: 0.5; }
+        .note-delete:hover { color: var(--danger); opacity: 1; }
+        .add-note-box { margin-bottom: 20px; display: flex; gap: 10px; }
+        .add-note-box textarea { flex: 1; }
 
         /* TOAST */
-        .toast{position:fixed;bottom:28px;right:28px;background:#1e293b;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:slideUp .25s ease;}
-        @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        .toast { position: fixed; bottom: 28px; right: 28px; background: var(--primary); color: #1a1b26; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 999; box-shadow: 0 8px 24px rgba(0,0,0,.3); animation: slideUp .25s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
 
-        @media(max-width:640px){
-            .app-header,.tabs,.main-content{padding-left:16px;padding-right:16px;}
-            .modal{padding:24px 20px;}
-            .login-card{padding:36px 24px;}
+        @media(max-width: 640px) {
+            .app-header, .tabs, .main-content { padding-left: 16px; padding-right: 16px; }
+            .modal { padding: 24px 20px; }
+            .login-card { padding: 36px 24px; }
         }
+
     </style>
 </head>
 <body>
@@ -138,37 +150,46 @@ async function decrypt(secret, b64) {
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let token = '';          // GitHub PAT — is both the auth credential AND the encryption key
+let token = sessionStorage.getItem('gh_crm_token') || '';          // GitHub PAT — is both the auth credential AND the encryption key
 let username = '';
 let currentTab = 'personal';
 let contacts = { personal:[], professional:[] };
 
 const GIST_FILE = 'personal-crm-sync.enc';
-const GIST_KEY  = 'crm_gist_id';
+function getGistKey() { return `crm_gist_id_${username}`; }
+
 
 // ── GITHUB API ────────────────────────────────────────────────────────────────
 async function gh(path, opts = {}) {
-    const r = await fetch('https://api.github.com' + path, {
-        ...opts,
-        headers: {
-            'Authorization': 'Bearer ' + token,
-            'Accept': 'application/vnd.github+json',
-            'Content-Type': 'application/json',
-            ...(opts.headers || {})
-        }
-    });
-    if (!r.ok) throw new Error(r.status);
-    return r.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+        const r = await fetch('https://api.github.com' + path, {
+            ...opts,
+            signal: controller.signal,
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Accept': 'application/vnd.github+json',
+                'Content-Type': 'application/json',
+                ...(opts.headers || {})
+            }
+        });
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
+
 async function findGist() {
-    const cached = localStorage.getItem(GIST_KEY);
+    const cached = localStorage.getItem(getGistKey());
     if (cached) {
         try {
             const g = await gh('/gists/' + cached);
             if (g.files[GIST_FILE]) return cached;
         } catch {}
-        localStorage.removeItem(GIST_KEY);
+        localStorage.removeItem(getGistKey());
     }
     // Scan for existing gist (handles new device login)
     let page = 1;
@@ -176,11 +197,25 @@ async function findGist() {
         const list = await gh(`/gists?per_page=100&page=${page}`);
         if (!list.length) break;
         const found = list.find(g => g.files && g.files[GIST_FILE]);
-        if (found) { localStorage.setItem(GIST_KEY, found.id); return found.id; }
+        if (found) { localStorage.setItem(getGistKey(), found.id); return found.id; }
         if (list.length < 100) break;
         page++;
     }
     return null;
+}
+
+function migrateNotes() {
+    ['personal', 'professional'].forEach(tab => {
+        contacts[tab] = contacts[tab].map(c => {
+            if (typeof c.notes === 'string') {
+                const text = c.notes.trim();
+                c.notes = text ? [{ date: today(), text }] : [];
+            } else if (!Array.isArray(c.notes)) {
+                c.notes = [];
+            }
+            return c;
+        });
+    });
 }
 
 async function loadFromGist() {
@@ -188,13 +223,17 @@ async function loadFromGist() {
     if (!id) return false;
     const g    = await gh('/gists/' + id);
     const file = g.files[GIST_FILE];
-    const raw  = file.truncated ? await (await fetch(file.raw_url)).text() : file.content;
+    const raw  = file.truncated 
+        ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text() 
+        : file.content;
     const parsed = JSON.parse(await decrypt(token, raw.trim()));
     contacts = parsed;
     contacts.personal     = contacts.personal     || [];
     contacts.professional = contacts.professional || [];
+    migrateNotes();
     return true;
 }
+
 
 async function saveToGist() {
     setSyncBadge('syncing');
@@ -205,10 +244,10 @@ async function saveToGist() {
             public: false,
             files: { [GIST_FILE]: { content } }
         });
-        let id = localStorage.getItem(GIST_KEY);
+        let id = localStorage.getItem(getGistKey());
         if (id) {
             try { await gh('/gists/' + id, { method:'PATCH', body }); }
-            catch { id = null; localStorage.removeItem(GIST_KEY); }
+            catch { id = null; localStorage.removeItem(getGistKey()); }
         }
         if (!id) {
             id = await findGist();
@@ -217,7 +256,7 @@ async function saveToGist() {
             } else {
                 const g = await gh('/gists', { method:'POST', body });
                 id = g.id;
-                localStorage.setItem(GIST_KEY, id);
+                localStorage.setItem(getGistKey(), id);
             }
         }
         setSyncBadge('ok');
@@ -225,6 +264,7 @@ async function saveToGist() {
         setSyncBadge('err');
     }
 }
+
 
 // ── DATE UTILS ────────────────────────────────────────────────────────────────
 function addDays(d, n) { const x = new Date(d+'T00:00:00'); x.setDate(x.getDate()+n); return x.toISOString().split('T')[0]; }
@@ -288,6 +328,7 @@ async function handleLogin(tok) {
         // Verify token via GitHub — this IS the authentication
         const user = await gh('/user');
         username = user.login;
+        sessionStorage.setItem('gh_crm_token', token);
         // Try loading existing data; if none, start fresh
         let loaded = false;
         try { loaded = await loadFromGist(); } catch {}
@@ -295,9 +336,27 @@ async function handleLogin(tok) {
         renderApp();
     } catch (e) {
         token = '';
-        renderLogin(e.message === '401' ? 'Invalid token. Please check and try again.' : 'Could not connect to GitHub. Check your token and network.');
+        sessionStorage.removeItem('gh_crm_token');
+        renderLogin(e.name === 'AbortError' ? 'Request timed out.' : (e.message === '401' ? 'Invalid token. Please check and try again.' : 'Could not connect to GitHub. Check your token and network.'));
     }
 }
+
+// Auto-login if token is in sessionStorage
+if (token) {
+    (async () => {
+        try {
+            const user = await gh('/user');
+            username = user.login;
+            await loadFromGist();
+            renderApp();
+        } catch {
+            sessionStorage.removeItem('gh_crm_token');
+            token = '';
+            renderLogin();
+        }
+    })();
+}
+
 
 // ── APP ───────────────────────────────────────────────────────────────────────
 function renderApp() {
@@ -334,17 +393,18 @@ function renderTable() {
     const list = sortContacts(contacts[currentTab]);
     if (!list.length) return `<div class="empty-state"><div class="icon">👥</div><p>No contacts yet — click <strong>Add Contact</strong> to get started.</p></div>`;
     return `<table><thead><tr>
-        <th>Name</th><th>Institution / Company</th><th>Last Contact</th><th>Next Contact</th><th>Status</th><th>Notes</th><th>Actions</th>
+        <th>Name</th><th>Institution / Company</th><th>Last Contact</th><th>Next Contact</th><th>Status</th><th>Latest Note</th><th>Actions</th>
     </tr></thead><tbody>` +
     list.map(c => {
         const s = getStatus(c.nextContact);
+        const lastNote = c.notes && c.notes.length > 0 ? c.notes[0].text : '—';
         return `<tr class="${s.diff<0?'overdue-row':''}">
             <td><span class="contact-name">${esc(c.name)}</span></td>
             <td><span class="institution-text">${esc(c.institution||'—')}</span></td>
             <td>${fmtDate(c.lastContact)}</td>
             <td>${fmtDate(c.nextContact)}</td>
             <td><span class="status-badge ${s.cls}">${s.label}</span></td>
-            <td class="notes-cell" title="${esc(c.notes)}">${esc(c.notes)||'<span style="color:#cbd5e1">—</span>'}</td>
+            <td class="notes-cell" title="${esc(lastNote)}">${esc(lastNote)}</td>
             <td><div class="action-btns">
                 <button class="btn-icon edit-btn" data-id="${c.id}">Edit</button>
                 <button class="btn-icon delete delete-btn" data-id="${c.id}">Delete</button>
@@ -352,6 +412,7 @@ function renderTable() {
         </tr>`;
     }).join('') + '</tbody></table>';
 }
+
 
 function attachTableEvents() {
     document.querySelectorAll('.edit-btn').forEach(b => b.onclick = () => openModal(b.dataset.id));
@@ -376,44 +437,102 @@ function refreshBadges() {
 // ── CONTACT MODAL ─────────────────────────────────────────────────────────────
 function openModal(editId) {
     const c = editId ? contacts[currentTab].find(x => x.id===editId) : null;
+    const notes = c?.notes || [];
+    
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="mo">
         <div class="modal">
             <div class="modal-header"><h3 class="modal-title">${c?'Edit':'Add'} Contact</h3><button class="modal-close" id="mc">&times;</button></div>
-            <div class="form-group"><label>Name <span style="color:var(--danger)">*</span></label>
-                <input type="text" id="f-name" class="form-control" value="${esc(c?.name||'')}" placeholder="Full name"></div>
-            <div class="form-group"><label>Institution / Company</label>
-                <input type="text" id="f-inst" class="form-control" value="${esc(c?.institution||'')}" placeholder="e.g. Google, IIT Delhi…"></div>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group"><label>Name <span style="color:var(--danger)">*</span></label>
+                    <input type="text" id="f-name" class="form-control" value="${esc(c?.name||'')}" placeholder="Full name"></div>
+                <div class="form-group"><label>Institution / Company</label>
+                    <input type="text" id="f-inst" class="form-control" value="${esc(c?.institution||'')}" placeholder="e.g. Google, IIT Delhi…"></div>
+            </div>
+            
             <div class="form-group"><label>Last Contact Date <span style="color:var(--danger)">*</span></label>
                 <input type="date" id="f-last" class="form-control" value="${c?.lastContact||today()}"></div>
-            <div class="form-group"><label>Notes</label>
-                <textarea id="f-notes" class="form-control" placeholder="Brief notes…">${esc(c?.notes||'')}</textarea></div>
+
+            <div class="notes-log">
+                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:12px; color:var(--text-muted);">Notes Log</label>
+                <div class="add-note-box">
+                    <textarea id="new-note-text" class="form-control" placeholder="Add a new dated note..."></textarea>
+                    <button class="btn btn-add" id="add-note-btn" style="height: fit-content;">Add</button>
+                </div>
+                <div id="notes-list">
+                    ${notes.map((n, i) => `
+                        <div class="note-entry">
+                            <span class="note-date">${fmtDate(n.date)}</span>
+                            <div class="note-text">${esc(n.text)}</div>
+                            <span class="note-delete" data-index="${i}">&times;</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
             <div class="modal-footer">
                 <button class="btn btn-cancel" id="mc2">Cancel</button>
-                <button class="btn btn-primary" id="ms">${c?'Save Changes':'Add Contact'}</button>
+                <button class="btn btn-primary" id="ms" style="width:auto;">${c?'Save Contact':'Add Contact'}</button>
             </div>
         </div>
     </div>`);
 
-    const close = () => document.getElementById('mo').remove();
+    const close = () => { document.getElementById('mo').remove(); };
     document.getElementById('mc').onclick = close;
     document.getElementById('mc2').onclick = close;
     document.getElementById('mo').onclick = e => { if (e.target.id==='mo') close(); };
+
+    // Notes Logic
+    const renderedNotes = [...notes];
+    const updateNotesUI = () => {
+        document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
+            <div class="note-entry">
+                <span class="note-date">${fmtDate(n.date)}</span>
+                <div class="note-text">${esc(n.text)}</div>
+                <span class="note-delete" data-index="${i}">&times;</span>
+            </div>
+        `).join('');
+        document.querySelectorAll('.note-delete').forEach(el => {
+            el.onclick = () => {
+                renderedNotes.splice(parseInt(el.dataset.index), 1);
+                updateNotesUI();
+            };
+        });
+    };
+    
+    document.getElementById('add-note-btn').onclick = () => {
+        const txt = document.getElementById('new-note-text').value.trim();
+        if (txt) {
+            renderedNotes.unshift({ date: today(), text: txt });
+            document.getElementById('new-note-text').value = '';
+            updateNotesUI();
+        }
+    };
+    updateNotesUI();
 
     document.getElementById('ms').onclick = async () => {
         const name = document.getElementById('f-name').value.trim();
         const inst = document.getElementById('f-inst').value.trim();
         const last = document.getElementById('f-last').value;
-        const notes= document.getElementById('f-notes').value.trim();
         if (!name) { alert('Please enter a name.'); return; }
         if (!last) { alert('Please enter the last contact date.'); return; }
         const next = addDays(last, 28);
+        
+        const contactData = { 
+            id: c?.id || genId(), 
+            name, institution: inst, 
+            lastContact: last, nextContact: next, 
+            notes: renderedNotes 
+        };
+
         if (editId) {
             const i = contacts[currentTab].findIndex(x => x.id===editId);
-            if (i !== -1) contacts[currentTab][i] = { ...contacts[currentTab][i], name, institution:inst, lastContact:last, nextContact:next, notes };
+            if (i !== -1) contacts[currentTab][i] = contactData;
         } else {
-            contacts[currentTab].push({ id:genId(), name, institution:inst, lastContact:last, nextContact:next, notes });
+            contacts[currentTab].push(contactData);
         }
+        
         close();
         document.getElementById('tbl').innerHTML = renderTable();
         attachTableEvents();
@@ -421,8 +540,8 @@ function openModal(editId) {
         toast(editId ? 'Contact updated.' : 'Contact added.');
         saveToGist();
     };
-    document.getElementById('f-name').focus();
 }
+
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 renderLogin();
