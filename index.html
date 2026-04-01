@@ -119,7 +119,7 @@
         .filter-label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
         .select-custom { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; outline: none; cursor: pointer; }
         .select-custom:focus { border-color: var(--primary); }
-        .search-input { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; min-width: 200px; }
+        .search-input { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; min-width: 160px; }
         .btn-download { background: rgba(187, 154, 247, 0.1); color: #bb9af7; border: 1px solid rgba(187, 154, 247, 0.3); }
         .btn-download:hover { background: rgba(187, 154, 247, 0.2); border-color: #bb9af7; }
         th.sortable { cursor: pointer; transition: background 0.2s; position: relative; padding-right: 25px; }
@@ -176,6 +176,7 @@ let contacts = { personal:[], professional:[] };
 // Filtering/Sorting State
 let searchQuery = '';
 let selectedInstitution = 'All';
+let selectedRegion = 'All';
 let sortConfig = { key: 'nextContact', direction: 'asc' };
 
 const GIST_FILE = 'personal-crm-sync.enc';
@@ -302,7 +303,7 @@ function getStatus(next) {
 function sortContacts(list) {
     return [...list].sort((a, b) => {
         let vA, vB;
-        if (sortConfig.key === 'name' || sortConfig.key === 'institution') {
+        if (['name', 'institution', 'region'].includes(sortConfig.key)) {
             vA = (a[sortConfig.key] || '').toLowerCase();
             vB = (b[sortConfig.key] || '').toLowerCase();
         } else {
@@ -323,7 +324,7 @@ function downloadMarkdown() {
     ['personal', 'professional'].forEach(tab => {
         md += `## ${tab.charAt(0).toUpperCase() + tab.slice(1)} Contacts\n\n`;
         contacts[tab].forEach(c => {
-            md += `### ${c.name}\n- **Institution**: ${c.institution || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
+            md += `### ${c.name}\n- **Institution**: ${c.institution || '—'}\n- **Region**: ${c.region || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
             if (c.notes && c.notes.length > 0) {
                 md += `- **Notes Log**:\n`;
                 c.notes.forEach(n => {
@@ -461,13 +462,22 @@ function renderApp() {
                     })()}
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Region</span>
+                <select id="region-filter" class="select-custom">
+                    ${(() => {
+                        const regs = ['All', ...new Set(contacts[currentTab].map(c => c.region).filter(Boolean))];
+                        return regs.map(r => `<option value="${esc(r)}" ${selectedRegion===r?'selected':''}>${esc(r)}</option>`).join('');
+                    })()}
+                </select>
+            </div>
         </div>
 
         <div class="contacts-wrapper"><div class="table-scroll" id="tbl">${renderTable()}</div></div>
     </main>`;
 
     document.getElementById('logout-btn').onclick = () => { token=''; username=''; renderLogin(); };
-    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; searchQuery = ''; renderApp(); });
+    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; renderApp(); });
     document.getElementById('add-btn').onclick = () => openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     
@@ -475,6 +485,9 @@ function renderApp() {
     sIn.oninput = () => { searchQuery = sIn.value; refreshTable(); };
     
     document.getElementById('inst-filter').onchange = (e) => { selectedInstitution = e.target.value; refreshTable(); };
+    
+    const regF = document.getElementById('region-filter');
+    if (regF) regF.onchange = (e) => { selectedRegion = e.target.value; refreshTable(); };
 
     attachTableEvents();
 }
@@ -490,9 +503,12 @@ function renderTable() {
     let list = contacts[currentTab].filter(c => {
         const matchesSearch = !searchQuery || 
             c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            (c.institution && c.institution.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (c.region && c.region.toLowerCase().includes(searchQuery.toLowerCase())) ||
             (c.notes && c.notes.some(n => n.text.toLowerCase().includes(searchQuery.toLowerCase())));
         const matchesInst = selectedInstitution === 'All' || c.institution === selectedInstitution;
-        return matchesSearch && matchesInst;
+        const matchesReg = selectedRegion === 'All' || c.region === selectedRegion;
+        return matchesSearch && matchesInst && matchesReg;
     });
     list = sortContacts(list);
 
@@ -503,6 +519,7 @@ function renderTable() {
     return `<table><thead><tr>
         <th class="${sortCls('name')}" data-sort="name">Name</th>
         <th class="${sortCls('institution')}" data-sort="institution">Institution / Company</th>
+        <th class="${sortCls('region')}" data-sort="region">Region</th>
         <th class="${sortCls('lastContact')}" data-sort="lastContact">Last Contact</th>
         <th class="${sortCls('nextContact')}" data-sort="nextContact">Next Contact</th>
         <th>Status</th><th>Latest Note</th><th>Actions</th>
@@ -513,6 +530,7 @@ function renderTable() {
         return `<tr class="${s.diff<0?'overdue-row':''}">
             <td><span class="contact-name">${esc(c.name)}</span></td>
             <td><span class="institution-text">${esc(c.institution||'—')}</span></td>
+            <td><span class="institution-text">${esc(c.region||'—')}</span></td>
             <td>${fmtDate(c.lastContact)}</td>
             <td>${fmtDate(c.nextContact)}</td>
             <td><span class="status-badge ${s.cls}">${s.label}</span></td>
@@ -565,11 +583,13 @@ function openModal(editId) {
         <div class="modal">
             <div class="modal-header"><h3 class="modal-title">${c?'Edit':'Add'} Contact</h3><button class="modal-close" id="mc">&times;</button></div>
             
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
                 <div class="form-group"><label>Name <span style="color:var(--danger)">*</span></label>
                     <input type="text" id="f-name" class="form-control" value="${esc(c?.name||'')}" placeholder="Full name"></div>
                 <div class="form-group"><label>Institution / Company</label>
                     <input type="text" id="f-inst" class="form-control" value="${esc(c?.institution||'')}" placeholder="e.g. Google, IIT Delhi…"></div>
+                <div class="form-group"><label>Region</label>
+                    <input type="text" id="f-reg" class="form-control" value="${esc(c?.region||'')}" placeholder="e.g. Asia, EU, US…"></div>
             </div>
             
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -684,6 +704,7 @@ function openModal(editId) {
     document.getElementById('ms').onclick = async () => {
         const name = document.getElementById('f-name').value.trim();
         const inst = document.getElementById('f-inst').value.trim();
+        const reg  = document.getElementById('f-reg').value.trim();
         const last = document.getElementById('f-last').value;
         const next = document.getElementById('f-next').value;
         if (!name) { alert('Please enter a name.'); return; }
@@ -692,7 +713,7 @@ function openModal(editId) {
         
         const contactData = { 
             id: c?.id || genId(), 
-            name, institution: inst, 
+            name, institution: inst, region: reg,
             lastContact: last, nextContact: next, 
             notes: renderedNotes 
         };
