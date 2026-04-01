@@ -566,8 +566,12 @@ function openModal(editId) {
                     <input type="text" id="f-inst" class="form-control" value="${esc(c?.institution||'')}" placeholder="e.g. Google, IIT Delhi…"></div>
             </div>
             
-            <div class="form-group"><label>Last Contact Date <span style="color:var(--danger)">*</span></label>
-                <input type="date" id="f-last" class="form-control" value="${c?.lastContact||today()}"></div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group"><label>Last Contact Date <span style="color:var(--danger)">*</span></label>
+                    <input type="date" id="f-last" class="form-control" value="${c?.lastContact||today()}"></div>
+                <div class="form-group"><label>Next Contact Date <span style="color:var(--danger)">*</span></label>
+                    <input type="date" id="f-next" class="form-control" value="${c?.nextContact||addDays(today(), 28)}"></div>
+            </div>
 
             <div class="notes-log">
                 <label style="display:block; font-size:13px; font-weight:600; margin-bottom:12px; color:var(--text-muted);">Notes Log</label>
@@ -645,15 +649,22 @@ function openModal(editId) {
             updateNotesUI();
         }
     };
+    document.getElementById('f-last').onchange = (e) => {
+        const nextInp = document.getElementById('f-next');
+        const lastVal = e.target.value;
+        if (lastVal) nextInp.value = addDays(lastVal, 28);
+    };
     updateNotesUI();
+
 
     document.getElementById('ms').onclick = async () => {
         const name = document.getElementById('f-name').value.trim();
         const inst = document.getElementById('f-inst').value.trim();
         const last = document.getElementById('f-last').value;
+        const next = document.getElementById('f-next').value;
         if (!name) { alert('Please enter a name.'); return; }
         if (!last) { alert('Please enter the last contact date.'); return; }
-        const next = addDays(last, 28);
+        if (!next) { alert('Please enter the next contact date.'); return; }
         
         const contactData = { 
             id: c?.id || genId(), 
