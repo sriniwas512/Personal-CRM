@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.github.com; img-src 'self' data:;">
     <title>Personal CRM</title>
     <style>
         :root {
@@ -179,6 +180,20 @@ let searchQuery = '';
 let selectedInstitution = 'All';
 let selectedRegion = 'All';
 let sortConfig = { key: 'nextContact', direction: 'asc' };
+let logoutTimer;
+
+function resetLogoutTimer() {
+    clearTimeout(logoutTimer);
+    if (token) {
+        logoutTimer = setTimeout(() => {
+            handleLogout('You have been logged out due to inactivity.');
+        }, 600000); // 10 minutes
+    }
+}
+
+['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(name => {
+    document.addEventListener(name, resetLogoutTimer, true);
+});
 
 const GIST_FILE = 'personal-crm-sync.enc';
 function getGistKey() { return `crm_gist_id_${username}`; }
@@ -402,6 +417,15 @@ async function handleLogin(tok) {
         sessionStorage.removeItem('gh_crm_token');
         renderLogin(e.name === 'AbortError' ? 'Request timed out.' : (e.message === '401' ? 'Invalid token. Please check and try again.' : 'Could not connect to GitHub. Check your token and network.'));
     }
+    resetLogoutTimer();
+}
+
+function handleLogout(msg = '') {
+    token = '';
+    username = '';
+    sessionStorage.removeItem('gh_crm_token');
+    clearTimeout(logoutTimer);
+    renderLogin(msg);
 }
 
 // Auto-login if token is in sessionStorage
@@ -477,7 +501,7 @@ function renderApp() {
         <div class="contacts-wrapper"><div class="table-scroll" id="tbl">${renderTable()}</div></div>
     </main>`;
 
-    document.getElementById('logout-btn').onclick = () => { token=''; username=''; renderLogin(); };
+    document.getElementById('logout-btn').onclick = () => handleLogout();
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; renderApp(); });
     document.getElementById('add-btn').onclick = () => openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;

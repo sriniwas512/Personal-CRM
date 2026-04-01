@@ -20,6 +20,9 @@ A high-performance, private, and exceptionally secure Personal Relationship Mana
     - **Smart Sorting**: Arrange lists by name, company, or upcoming contact dates.
     - **Export**: Download your entire database as a beautifully structured `.md` (Markdown) tree file.
 - **⏰ Smart Reminders**: Automatically tracks "Next Contact" dates (defaulting to 28 days) with overdue indicators.
+- **🛡️ Advanced Security**:
+    - **Strict CSP**: Content Security Policy blocks any external script or data leakage.
+    - **Auto-Logout**: Automatically clears session data after 10 minutes of inactivity.
 
 ## 🚀 How to Use
 
@@ -35,7 +38,9 @@ A high-performance, private, and exceptionally secure Personal Relationship Mana
 - **Encryption**: Uses the browser's native Web Crypto API.
 - **Key Derivation**: Your GitHub PAT is passed through **PBKDF2** (200,000 iterations + random salt) to derive the encryption key.
 - **Transport**: All operations occur via the official GitHub API over HTTPS.
+- **CSP**: Implemented a strict Content Security Policy to prevent XSS and data exfiltration.
 - **Memory**: Tokens are stored in `sessionStorage`, meaning they are wiped the moment you close the tab.
+- **Auto-Logout**: JavaScript inactivity timer (10 mins) clears memory and resets session automatically for physical security.
 
 ## 🛠️ Built With
 
