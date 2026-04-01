@@ -556,12 +556,18 @@ function attachTableEvents() {
     });
     document.querySelectorAll('.edit-btn').forEach(b => b.onclick = () => openModal(b.dataset.id));
     document.querySelectorAll('.delete-btn').forEach(b => b.onclick = async () => {
-        if (!confirm('Delete this contact?')) return;
+        if (!confirm('Are you sure you want to delete this contact? This action cannot be undone.')) return;
+        
+        if (confirm('Would you like to download your data as a .md file before deleting?')) {
+            downloadMarkdown();
+        }
+        
         contacts[currentTab] = contacts[currentTab].filter(c => c.id !== b.dataset.id);
         saveToGist();
         document.getElementById('tbl').innerHTML = renderTable();
         attachTableEvents();
         refreshBadges();
+        toast('Contact deleted.');
     });
 }
 
