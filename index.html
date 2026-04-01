@@ -104,11 +104,26 @@
         .notes-log { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
         .note-entry { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; position: relative; }
         .note-date { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 4px; display: block; }
-        .note-text { font-size: 13px; color: var(--text); white-space: pre-wrap; }
+        .note-text { font-size: 13px; color: var(--text); white-space: pre-wrap; cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
+        .note-text:hover { background: rgba(255,255,255,0.05); }
+        .note-edit-area { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 5px; font-family: inherit; font-size: 13px; outline: none; margin-top: 5px; }
         .note-delete { position: absolute; top: 8px; right: 8px; color: var(--text-muted); cursor: pointer; font-size: 16px; opacity: 0.5; }
         .note-delete:hover { color: var(--danger); opacity: 1; }
         .add-note-box { margin-bottom: 20px; display: flex; gap: 10px; }
         .add-note-box textarea { flex: 1; }
+        .filter-bar { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+        .filter-group { display: flex; align-items: center; gap: 8px; }
+        .filter-label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .select-custom { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; outline: none; cursor: pointer; }
+        .select-custom:focus { border-color: var(--primary); }
+        .search-input { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; min-width: 200px; }
+        .btn-download { background: rgba(187, 154, 247, 0.1); color: #bb9af7; border: 1px solid rgba(187, 154, 247, 0.3); }
+        .btn-download:hover { background: rgba(187, 154, 247, 0.2); border-color: #bb9af7; }
+        th.sortable { cursor: pointer; transition: background 0.2s; position: relative; padding-right: 25px; }
+        th.sortable:hover { background: rgba(255,255,255,0.05) !important; }
+        th.sortable::after { content: '↕'; position: absolute; right: 8px; opacity: 0.3; font-size: 10px; }
+        th.sortable.asc::after { content: '↑'; opacity: 1; color: var(--primary); }
+        th.sortable.desc::after { content: '↓'; opacity: 1; color: var(--primary); }
 
         /* TOAST */
         .toast { position: fixed; bottom: 28px; right: 28px; background: var(--primary); color: #1a1b26; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 999; box-shadow: 0 8px 24px rgba(0,0,0,.3); animation: slideUp .25s ease; }
@@ -150,10 +165,15 @@ async function decrypt(secret, b64) {
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let token = sessionStorage.getItem('gh_crm_token') || '';          // GitHub PAT — is both the auth credential AND the encryption key
+let token = sessionStorage.getItem('gh_crm_token') || '';
 let username = '';
 let currentTab = 'personal';
 let contacts = { personal:[], professional:[] };
+
+// Filtering/Sorting State
+let searchQuery = '';
+let selectedInstitution = 'All';
+let sortConfig = { key: 'nextContact', direction: 'asc' };
 
 const GIST_FILE = 'personal-crm-sync.enc';
 function getGistKey() { return `crm_gist_id_${username}`; }
@@ -276,10 +296,48 @@ function getStatus(next) {
     if (diff <= 7) return { label:'Due Soon',                        cls:'status-due-soon', diff };
     return               { label:'Upcoming',                         cls:'status-upcoming', diff };
 }
-function sortContacts(list) { return [...list].sort((a,b) => new Date(a.nextContact) - new Date(b.nextContact)); }
+function sortContacts(list) {
+    return [...list].sort((a, b) => {
+        let vA, vB;
+        if (sortConfig.key === 'name' || sortConfig.key === 'institution') {
+            vA = (a[sortConfig.key] || '').toLowerCase();
+            vB = (b[sortConfig.key] || '').toLowerCase();
+        } else {
+            vA = new Date(a[sortConfig.key] || '1970-01-01');
+            vB = new Date(b[sortConfig.key] || '1970-01-01');
+        }
+        if (vA < vB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (vA > vB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 function esc(s)  { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function overdueCount(tab) { return contacts[tab].filter(c => getStatus(c.nextContact).diff < 0).length; }
+
+function downloadMarkdown() {
+    let md = `# Personal CRM Export - ${today()}\n\n`;
+    ['personal', 'professional'].forEach(tab => {
+        md += `## ${tab.charAt(0).toUpperCase() + tab.slice(1)} Contacts\n\n`;
+        contacts[tab].forEach(c => {
+            md += `### ${c.name}\n- **Institution**: ${c.institution || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
+            if (c.notes && c.notes.length > 0) {
+                md += `- **Notes Log**:\n`;
+                c.notes.forEach(n => {
+                    md += `    - [${fmtDate(n.date)}] ${n.text.replace(/\n/g, ' ')}\n`;
+                });
+            }
+            md += `\n`;
+        });
+    });
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crm_export_${today()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
 
 function toast(msg, ms=2800) {
     const t = document.createElement('div'); t.className='toast'; t.textContent=msg;
@@ -377,23 +435,71 @@ function renderApp() {
     <main class="main-content">
         <div class="section-header">
             <h2 class="section-title">${currentTab==='personal'?'Personal':'Professional'} Contacts</h2>
-            <button class="btn-add" id="add-btn">+ Add Contact</button>
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-sm btn-download" id="dl-btn">Download .md</button>
+                <button class="btn-add" id="add-btn">+ Add Contact</button>
+            </div>
         </div>
+        
+        <div class="filter-bar">
+            <div class="filter-group">
+                <span class="filter-label">Search</span>
+                <input type="text" id="search-in" class="search-input" value="${esc(searchQuery)}" placeholder="Name or notes...">
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Institution</span>
+                <select id="inst-filter" class="select-custom">
+                    ${(() => {
+                        const insts = ['All', ...new Set(contacts[currentTab].map(c => c.institution).filter(Boolean))];
+                        return insts.map(i => `<option value="${esc(i)}" ${selectedInstitution===i?'selected':''}>${esc(i)}</option>`).join('');
+                    })()}
+                </select>
+            </div>
+        </div>
+
         <div class="contacts-wrapper"><div class="table-scroll" id="tbl">${renderTable()}</div></div>
     </main>`;
 
     document.getElementById('logout-btn').onclick = () => { token=''; username=''; renderLogin(); };
-    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; renderApp(); });
+    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; searchQuery = ''; renderApp(); });
     document.getElementById('add-btn').onclick = () => openModal(null);
+    document.getElementById('dl-btn').onclick = downloadMarkdown;
+    
+    const sIn = document.getElementById('search-in');
+    sIn.oninput = () => { searchQuery = sIn.value; refreshTable(); };
+    
+    document.getElementById('inst-filter').onchange = (e) => { selectedInstitution = e.target.value; refreshTable(); };
+
     attachTableEvents();
 }
 
+function refreshTable() {
+    document.getElementById('tbl').innerHTML = renderTable();
+    attachTableEvents();
+}
+
+
 // ── TABLE ─────────────────────────────────────────────────────────────────────
 function renderTable() {
-    const list = sortContacts(contacts[currentTab]);
-    if (!list.length) return `<div class="empty-state"><div class="icon">👥</div><p>No contacts yet — click <strong>Add Contact</strong> to get started.</p></div>`;
+    let list = contacts[currentTab].filter(c => {
+        const matchesSearch = !searchQuery || 
+            c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            (c.notes && c.notes.some(n => n.text.toLowerCase().includes(searchQuery.toLowerCase())));
+        const matchesInst = selectedInstitution === 'All' || c.institution === selectedInstitution;
+        return matchesSearch && matchesInst;
+    });
+    list = sortContacts(list);
+
+    if (!list.length) return `<div class="empty-state"><div class="icon">👥</div><p>No contacts found.</p></div>`;
+    
+    const sortCls = (key) => sortConfig.key === key ? (sortConfig.direction === 'asc' ? 'sortable asc' : 'sortable desc') : 'sortable';
+
     return `<table><thead><tr>
-        <th>Name</th><th>Institution / Company</th><th>Last Contact</th><th>Next Contact</th><th>Status</th><th>Latest Note</th><th>Actions</th>
+        <th class="${sortCls('name')}" data-sort="name">Name</th>
+        <th class="${sortCls('institution')}" data-sort="institution">Institution / Company</th>
+        <th class="${sortCls('lastContact')}" data-sort="lastContact">Last Contact</th>
+        <th class="${sortCls('nextContact')}" data-sort="nextContact">Next Contact</th>
+        <th>Status</th><th>Latest Note</th><th>Actions</th>
     </tr></thead><tbody>` +
     list.map(c => {
         const s = getStatus(c.nextContact);
@@ -413,8 +519,17 @@ function renderTable() {
     }).join('') + '</tbody></table>';
 }
 
-
 function attachTableEvents() {
+    document.querySelectorAll('th.sortable').forEach(th => th.onclick = () => {
+        const key = th.dataset.sort;
+        if (sortConfig.key === key) {
+            sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortConfig.key = key;
+            sortConfig.direction = 'asc';
+        }
+        refreshTable();
+    });
     document.querySelectorAll('.edit-btn').forEach(b => b.onclick = () => openModal(b.dataset.id));
     document.querySelectorAll('.delete-btn').forEach(b => b.onclick = async () => {
         if (!confirm('Delete this contact?')) return;
@@ -489,10 +604,31 @@ function openModal(editId) {
         document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
             <div class="note-entry">
                 <span class="note-date">${fmtDate(n.date)}</span>
-                <div class="note-text">${esc(n.text)}</div>
+                <div class="note-text" data-index="${i}">${esc(n.text)}</div>
                 <span class="note-delete" data-index="${i}">&times;</span>
             </div>
         `).join('');
+        
+        document.querySelectorAll('.note-text').forEach(el => {
+            el.onclick = () => {
+                const idx = parseInt(el.dataset.index);
+                const currentTxt = renderedNotes[idx].text;
+                const area = document.createElement('textarea');
+                area.className = 'note-edit-area';
+                area.value = currentTxt;
+                el.replaceWith(area);
+                area.focus();
+                area.onblur = () => {
+                    renderedNotes[idx].text = area.value.trim() || currentTxt;
+                    updateNotesUI();
+                };
+                area.onkeydown = (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); area.blur(); }
+                    if (e.key === 'Escape') { area.value = currentTxt; area.blur(); }
+                };
+            };
+        });
+
         document.querySelectorAll('.note-delete').forEach(el => {
             el.onclick = () => {
                 renderedNotes.splice(parseInt(el.dataset.index), 1);
