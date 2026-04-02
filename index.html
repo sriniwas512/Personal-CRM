@@ -463,6 +463,7 @@ function renderApp() {
         <span class="user-pill">@${esc(username)}</span>
         <div class="header-right">
             <span id="sync-badge" class="sync-badge sync-ok">✓ Synced</span>
+            <button class="btn btn-sm btn-download" id="dl-btn">Download .md</button>
             <button class="btn-sm danger" id="logout-btn">Sign Out</button>
         </div>
     </header>
@@ -475,7 +476,6 @@ function renderApp() {
         <div class="section-header">
             <h2 class="section-title">${currentTab==='notes'?'Notes Diary':(currentTab==='personal'?'Personal':'Professional')+' Contacts'}</h2>
             <div style="display:flex; gap:10px;">
-                <button class="btn btn-sm btn-download" id="dl-btn">Download .md</button>
                 <button class="btn-add" id="add-btn">${currentTab==='notes'?'+ Add Entry':'+ Add Contact'}</button>
             </div>
         </div>
