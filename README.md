@@ -88,6 +88,12 @@ A strict CSP restricts the page to `self`-origin resources, inline styles/script
 3. Paste the token into the login screen.
 4. Your data auto-syncs to a private, encrypted Gist on your account.
 
+## Storage
+
+GitHub Gists have a **100 MB per-file limit**. Since the CRM stores only text (names, dates, notes), a single contact with detailed notes is roughly 500–1,000 bytes. At that rate, you would need **100,000+ entries** to approach the limit — decades of daily use.
+
+Storage via GitHub Gists is **free** with no recurring cost. In the unlikely event your data approaches the limit, you can use the built-in **Markdown export** button to download your entire database as a `.md` file for archival or migration.
+
 ## Built With
 
 - Single-file HTML/JS (no frameworks, no build step)
