@@ -1,98 +1,99 @@
 **Created by Sriniwas Ghate**
 
-# 🗄️ Personal CRM (Tokyo Night Edition)
+# Personal CRM
 
-A high-performance, private, and exceptionally secure Personal Relationship Manager (CRM) built for individuals who prioritize data ownership. This is a "Bring Your Own Storage" application that uses your GitHub account as a secure, encrypted database.
+A private, encrypted personal CRM that stores your data in your own GitHub account.
+No servers. No subscriptions. No data harvesting.
 
-![Aesthetic](https://img.shields.io/badge/Aesthetic-Tokyo%20Night-7aa2f7?style=for-the-badge)
-![Security](https://img.shields.io/badge/Security-AES--256--GCM-9ece6a?style=for-the-badge)
-![Tech](https://img.shields.io/badge/Tech-Vanilla%20JS-f7768e?style=for-the-badge)
+![Security](https://img.shields.io/badge/Encryption-AES--256--GCM-9ece6a?style=for-the-badge)
+![Tech](https://img.shields.io/badge/Stack-Vanilla%20JS-f7768e?style=for-the-badge)
+![Theme](https://img.shields.io/badge/Theme-Tokyo%20Night-7aa2f7?style=for-the-badge)
 
-## ✨ Features
+## How It Works
 
-- **🌙 Tokyo Night Aesthetics**: A visually stunning dark theme inspired by the color palette.
-- **📜 Dated Note Logs**: Instead of a single text field, every contact has a structured log of dated entries with inline editing support.
-- **🔒 Zero-Knowledge Privacy**: Your data is encrypted locally using **AES-256-GCM** before ever leaving your browser.
-- **☁️ GitHub Gist Sync**: Uses your personal GitHub account to store data. No 3rd-party servers are involved.
-- **👥 Multi-User Safe**: Designed so different users can use the same deployed URL with their own tokens without data crossover.
-- **📊 Management Tools**:
-    - **Filter & Search**: Quickly find contacts by name, institution, or note content.
-    - **Smart Sorting**: Arrange lists by name, company, or upcoming contact dates.
-    - **Export**: Download your entire database as a beautifully structured `.md` (Markdown) tree file.
-- **⏰ Smart Reminders**: Automatically tracks "Next Contact" dates (defaulting to 28 days) with overdue indicators.
-- **🛡️ Advanced Security**:
-    - **Strict CSP**: Content Security Policy blocks any external script or data leakage.
-    - **Auto-Logout**: Automatically clears session data after 10 minutes of inactivity.
+1. You authenticate with a [GitHub Personal Access Token](https://github.com/settings/tokens/new?scopes=gist&description=Personal+CRM) (only the `gist` scope is needed).
+2. Your data is encrypted locally in the browser using your PAT as the key.
+3. The encrypted blob is stored as a private Gist on your GitHub account.
+4. On login, the Gist is fetched and decrypted locally. No plaintext ever leaves your browser.
 
-## 🚀 How to Use
+There is no backend. The app is a single HTML file.
 
-1.  **Deploy**: Simply host the `index.html` file anywhere (GitHub Pages, Vercel, or even locally).
-2.  **Authenticate**:
-    - Generate a [GitHub Personal Access Token (Classic)](https://github.com/settings/tokens/new?scopes=gist&description=Personal+CRM).
-    - Enable **only** the `gist` scope.
-3.  **Sign In**: Paste your token into the app.
-4.  **Manage**: Your data will be automatically saved to a private, encrypted Gist on your GitHub account.
+## Features
 
-## 🛡️ Security Architecture
+- **Encrypted sync** — AES-256-GCM encryption with PBKDF2 key derivation (200k iterations). Data is encrypted before it leaves your browser.
+- **Contacts management** — Separate tabs for personal and professional contacts with dated note logs, inline editing, and "next contact" reminders.
+- **Notes diary** — A general-purpose dated journal, sorted newest-first.
+- **Filter, search, sort** — Find contacts by name, institution, region, or note content.
+- **Markdown export** — Download your entire database as a structured `.md` file.
+- **Auto-logout** — 10-minute inactivity timer clears session and wipes in-memory data.
+- **Tokyo Night theme** — Dark UI with the Tokyo Night color palette.
 
-Your data is protected by **four independent layers** of security. Even if one layer were somehow compromised, the others still keep your data safe.
+## Security Architecture
 
-### 🔐 Layer 1: Data Isolation (GitHub API)
-
-| Concern | Protection |
-|---|---|
-| **Can another user see my data?** | **No.** When any user enters their PAT, the GitHub API only returns gists owned by *that* token's account. It is physically impossible for User B's token to list or access User A's gists. |
-| **Can someone guess my Gist URL?** | Even if they did, the Gist is **private** and requires authentication. Without your PAT, GitHub returns `404 Not Found`. |
-
-### 🔑 Layer 2: Military-Grade Encryption
-
-Even if someone obtained the raw Gist file directly, they would see only encrypted gibberish.
+### Encryption
 
 | Property | Value |
 |---|---|
-| **Algorithm** | **AES-256-GCM** (used by governments and banks worldwide) |
-| **Key Derivation** | **PBKDF2** with **200,000 iterations** + SHA-256 |
-| **Salt** | Random **16 bytes**, regenerated on every save |
-| **IV (Nonce)** | Random **12 bytes**, regenerated on every save |
-| **Integrity** | GCM mode provides **authenticated encryption** — any tampering with the ciphertext causes decryption to fail entirely, not produce garbled data |
-| **Key Source** | Your GitHub PAT is the key. A different PAT = a completely different encryption key = **decryption fails with an error** |
+| Algorithm | AES-256-GCM |
+| Key Derivation | PBKDF2, 200,000 iterations, SHA-256 |
+| Salt | Random 16 bytes, regenerated per save |
+| IV | Random 12 bytes, regenerated per save |
+| Integrity | GCM provides authenticated encryption — tampered ciphertext fails to decrypt rather than producing garbled output |
 
-### 🖥️ Layer 3: DOM & Inspect Element Protection
+The encryption key is derived from your GitHub PAT. A different PAT produces a different key, so decryption fails cleanly — no partial data is exposed.
 
-| Concern | Protection |
+### Data Isolation
+
+- Gist access is enforced by GitHub's permission model. A PAT can only list and read gists belonging to its own account.
+- The Gist is created as **private**. Unauthenticated requests return `404`.
+- Even if the raw ciphertext were accessed, it cannot be decrypted without the correct PAT.
+
+### Session & Memory
+
+- The PAT is stored in `sessionStorage` (cleared when the tab closes — not persisted to disk).
+- A 10-minute inactivity timer triggers logout, which zeros the in-memory contacts object, clears the session token, and replaces the DOM with the login screen.
+- No data is rendered to the DOM until authentication succeeds and decryption completes. Without a valid token, the page contains only the login form and empty state.
+
+### Content Security Policy
+
+A strict CSP restricts the page to `self`-origin resources, inline styles/scripts, and the GitHub API. No external scripts, no external image loads, no data exfiltration vectors via resource injection.
+
+### Threat Model
+
+**What this protects against:**
+
+| Threat | Mitigation |
 |---|---|
-| **Can someone use Inspect Element to bypass the login?** | **No.** The page starts with a completely **empty** `<div id="root">`. Your contact data does not exist in the DOM, in JavaScript memory, or anywhere on the page until *after* authentication succeeds AND encrypted data is fetched and decrypted. Bypassing the login wall visually shows a blank, empty application — there is nothing to steal. |
-| **Is data hardcoded anywhere?** | **No.** All data lives exclusively in an encrypted GitHub Gist. The HTML file contains zero user data. |
+| Gist contents exposed (e.g. GitHub breach) | Data is AES-256-GCM encrypted; ciphertext alone is not useful |
+| Another user enters their own PAT | GitHub API scopes access to that user's gists only; encryption keys differ |
+| Casual inspection of the page source | No user data exists in the HTML. Data is fetched and decrypted at runtime |
+| XSS / script injection | Strict Content Security Policy blocks unauthorized scripts |
+| Leaving the app open unattended | Auto-logout after 10 minutes of inactivity, memory wiped |
 
-### 🕐 Layer 4: Session & Memory Security
+**What this does NOT protect against:**
 
-| Feature | Details |
+| Threat | Why |
 |---|---|
-| **Session Storage** | Your PAT is stored in `sessionStorage`, which is **wiped the moment you close the tab**. It is not persisted to disk. |
-| **Auto-Logout** | A **10-minute inactivity timer** automatically logs you out if you walk away from your computer. |
-| **Memory Wipe on Logout** | On logout, the in-memory `contacts` object is explicitly zeroed (`{ personal:[], professional:[], notesDiary:[] }`), the DOM is replaced with the login screen, and the session token is removed. No residual data remains. |
-| **Content Security Policy (CSP)** | A strict CSP header blocks any external scripts, inline injection, or data exfiltration attempts (XSS protection). |
-| **Transport** | All API calls use **HTTPS** via the official GitHub API. No data is ever sent to any third-party server. |
+| Compromised browser or device | If your device is compromised, all bets are off — this applies to any client-side application |
+| Malicious browser extensions | Extensions with broad permissions can read page content after decryption |
+| Stolen PAT | Anyone with your PAT can authenticate as you and decrypt your data. **Treat your PAT like a password.** |
+| Keylogger on the device | A keylogger can capture your PAT as you paste it |
 
-### 🧪 Summary
+> **Security depends on safeguarding your GitHub Personal Access Token. Treat it like a password. Do not share it, do not commit it to a repo, and revoke it immediately if you suspect it has been exposed.**
 
-```
-Your PAT ──► PBKDF2 (200k iterations) ──► AES-256-GCM Key
-                                              │
-Your Data ──► Encrypt with Key ──► Base64 ──► GitHub Gist (private, encrypted)
-                                              │
-On Login  ──► Fetch Gist ──► Decrypt ──► Display in browser (memory only)
-On Logout ──► Wipe memory ──► Clear session ──► Empty DOM
-```
+## Quick Start
 
-> **Bottom line:** No other user can see your data. No one can bypass the login wall. Even if someone directly inspected the raw Gist on GitHub, they'd see only encrypted ciphertext that is computationally infeasible to crack without your exact PAT.
+1. Host `index.html` anywhere — GitHub Pages, Vercel, or open it locally as a file.
+2. Generate a [GitHub PAT](https://github.com/settings/tokens/new?scopes=gist&description=Personal+CRM) with only the `gist` scope.
+3. Paste the token into the login screen.
+4. Your data auto-syncs to a private, encrypted Gist on your account.
 
-## 🛠️ Built With
+## Built With
 
-- Pure HTML/JavaScript (No frameworks/bloat)
-- Vanilla CSS (Inter Font Stack)
-- Web Crypto API
+- Single-file HTML/JS (no frameworks, no build step)
+- Vanilla CSS (Inter font stack)
+- Web Crypto API (SubtleCrypto)
 - GitHub Gists API
 
 ---
-*Built for privacy. Owned by you.*
+*Your data. Your key. Your infrastructure.*
