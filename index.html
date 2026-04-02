@@ -293,6 +293,13 @@ async function saveToGist() {
             try {
                 const snapshot = JSON.stringify(contacts);
                 const content = await encrypt(token, snapshot);
+                
+                // Storage warning check (warn at 90MB limit out of 100MB)
+                // 90 MB = 94,371,840 bytes. We use length of the base64 string as a conservative estimate.
+                if (content.length > 94371840) {
+                    toast('⚠ Storage is over 90% full! Please export (.md) your data soon.', 10000);
+                }
+
                 const body    = JSON.stringify({
                     description: 'Personal CRM data — do not edit manually',
                     public: false,
