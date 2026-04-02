@@ -487,9 +487,36 @@ async function handleLogin(tok) {
 function handleLogout(msg = '') {
     token = '';
     username = '';
+    
+    // Best-effort memory scrub (addresses cold-boot concerns despite JS string immutability)
+    const scramble = (obj) => {
+        if (!obj) return;
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; i++) scramble(obj[i]);
+            obj.length = 0; // truncate array
+        } else if (typeof obj === 'object') {
+            for (let k in obj) {
+                if (typeof obj[k] === 'string') {
+                    const r = new Uint8Array(obj[k].length);
+                    crypto.getRandomValues(r);
+                    obj[k] = Array.from(r).map(n => String.fromCharCode((n % 26) + 97)).join('');
+                } else if (typeof obj[k] === 'object') {
+                    scramble(obj[k]);
+                }
+            }
+        }
+    };
+    scramble(contacts);
+    
     contacts = { personal:[], professional:[], notesDiary:[] };
     sessionStorage.removeItem('gh_crm_token');
     clearTimeout(logoutTimer);
+    clearTimeout(logoutWarningTimer);
+    
+    // Wipe DOM to remove decrypted text fragments
+    const root = document.getElementById('root');
+    if (root) root.innerHTML = '';
+    
     renderLogin(msg);
 }
 
