@@ -33,14 +33,59 @@ A high-performance, private, and exceptionally secure Personal Relationship Mana
 3.  **Sign In**: Paste your token into the app.
 4.  **Manage**: Your data will be automatically saved to a private, encrypted Gist on your GitHub account.
 
-## 🛡️ Technical Security
+## 🛡️ Security Architecture
 
-- **Encryption**: Uses the browser's native Web Crypto API.
-- **Key Derivation**: Your GitHub PAT is passed through **PBKDF2** (200,000 iterations + random salt) to derive the encryption key.
-- **Transport**: All operations occur via the official GitHub API over HTTPS.
-- **CSP**: Implemented a strict Content Security Policy to prevent XSS and data exfiltration.
-- **Memory**: Tokens are stored in `sessionStorage`, meaning they are wiped the moment you close the tab.
-- **Auto-Logout**: JavaScript inactivity timer (10 mins) clears memory and resets session automatically for physical security.
+Your data is protected by **four independent layers** of security. Even if one layer were somehow compromised, the others still keep your data safe.
+
+### 🔐 Layer 1: Data Isolation (GitHub API)
+
+| Concern | Protection |
+|---|---|
+| **Can another user see my data?** | **No.** When any user enters their PAT, the GitHub API only returns gists owned by *that* token's account. It is physically impossible for User B's token to list or access User A's gists. |
+| **Can someone guess my Gist URL?** | Even if they did, the Gist is **private** and requires authentication. Without your PAT, GitHub returns `404 Not Found`. |
+
+### 🔑 Layer 2: Military-Grade Encryption
+
+Even if someone obtained the raw Gist file directly, they would see only encrypted gibberish.
+
+| Property | Value |
+|---|---|
+| **Algorithm** | **AES-256-GCM** (used by governments and banks worldwide) |
+| **Key Derivation** | **PBKDF2** with **200,000 iterations** + SHA-256 |
+| **Salt** | Random **16 bytes**, regenerated on every save |
+| **IV (Nonce)** | Random **12 bytes**, regenerated on every save |
+| **Integrity** | GCM mode provides **authenticated encryption** — any tampering with the ciphertext causes decryption to fail entirely, not produce garbled data |
+| **Key Source** | Your GitHub PAT is the key. A different PAT = a completely different encryption key = **decryption fails with an error** |
+
+### 🖥️ Layer 3: DOM & Inspect Element Protection
+
+| Concern | Protection |
+|---|---|
+| **Can someone use Inspect Element to bypass the login?** | **No.** The page starts with a completely **empty** `<div id="root">`. Your contact data does not exist in the DOM, in JavaScript memory, or anywhere on the page until *after* authentication succeeds AND encrypted data is fetched and decrypted. Bypassing the login wall visually shows a blank, empty application — there is nothing to steal. |
+| **Is data hardcoded anywhere?** | **No.** All data lives exclusively in an encrypted GitHub Gist. The HTML file contains zero user data. |
+
+### 🕐 Layer 4: Session & Memory Security
+
+| Feature | Details |
+|---|---|
+| **Session Storage** | Your PAT is stored in `sessionStorage`, which is **wiped the moment you close the tab**. It is not persisted to disk. |
+| **Auto-Logout** | A **10-minute inactivity timer** automatically logs you out if you walk away from your computer. |
+| **Memory Wipe on Logout** | On logout, the in-memory `contacts` object is explicitly zeroed (`{ personal:[], professional:[], notesDiary:[] }`), the DOM is replaced with the login screen, and the session token is removed. No residual data remains. |
+| **Content Security Policy (CSP)** | A strict CSP header blocks any external scripts, inline injection, or data exfiltration attempts (XSS protection). |
+| **Transport** | All API calls use **HTTPS** via the official GitHub API. No data is ever sent to any third-party server. |
+
+### 🧪 Summary
+
+```
+Your PAT ──► PBKDF2 (200k iterations) ──► AES-256-GCM Key
+                                              │
+Your Data ──► Encrypt with Key ──► Base64 ──► GitHub Gist (private, encrypted)
+                                              │
+On Login  ──► Fetch Gist ──► Decrypt ──► Display in browser (memory only)
+On Logout ──► Wipe memory ──► Clear session ──► Empty DOM
+```
+
+> **Bottom line:** No other user can see your data. No one can bypass the login wall. Even if someone directly inspected the raw Gist on GitHub, they'd see only encrypted ciphertext that is computationally infeasible to crack without your exact PAT.
 
 ## 🛠️ Built With
 
