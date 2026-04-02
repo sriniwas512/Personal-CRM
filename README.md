@@ -25,7 +25,8 @@ There is no backend. The app is a single HTML file.
 - **Notes diary** — A general-purpose dated journal, sorted newest-first.
 - **Filter, search, sort** — Find contacts by name, institution, region, or note content.
 - **Markdown export** — Download your entire database as a structured `.md` file.
-- **Auto-logout** — 10-minute inactivity timer clears session and wipes in-memory data.
+- **Auto-logout & Memory Scrub** — 10-minute inactivity timer cleanses memory with random byte overwrites and clears the session.
+- **Optimistic Concurrency** — Blocks overwriting remote changes if modified by another device since the last sync.
 - **Tokyo Night theme** — Dark UI with the Tokyo Night color palette.
 
 ## Security Architecture
@@ -51,12 +52,19 @@ The encryption key is derived from your GitHub PAT. A different PAT produces a d
 ### Session & Memory
 
 - The PAT is stored in `sessionStorage` (cleared when the tab closes — not persisted to disk).
-- A 10-minute inactivity timer triggers logout, which zeros the in-memory contacts object, clears the session token, and replaces the DOM with the login screen.
+- A 10-minute inactivity timer triggers logout. The logout sequence employs a "best-effort" recursive memory scrub (overwriting object strings with random cryptographic bytes) before truncating tracking arrays, clearing the session token, and purging the DOM.
 - No data is rendered to the DOM until authentication succeeds and decryption completes. Without a valid token, the page contains only the login form and empty state.
+- **Decryption Safeguard:** If the AES-GCM decryption fails (due to a bad token or modified raw gist code), the application aborts immediately and refuses to load. This specifically prevents empty array payloads from accidentally overwriting your corrupted data when you log in.
 
-### Content Security Policy
+### Content Security Policy & XSS Prevention
 
 A strict CSP restricts the page to `self`-origin resources, inline styles/scripts, and the GitHub API. No external scripts, no external image loads, no data exfiltration vectors via resource injection.
+Furthermore, all dynamic data rendered into the `innerHTML` of the tables and modals is strictly wrapped in a deterministic `esc()` sanitation function, effectively neutralizing `<script>` tag injection attempts in notes or contact fields.
+
+### API Reliability
+
+- **Pagination:** The application correctly iterates through the GitHub API pagination limits (`per_page=100`) to find the CRM Gist regardless of how many other Gists you host.
+- **Concurrency Control:** Before establishing a new write, it verifies the remote `.updated_at` timestamp against your local sync timestamp. If another device modified the file recently, it throws an optimistic concurrency collision error requiring manual resolution.
 
 ### Threat Model
 
@@ -92,7 +100,9 @@ A strict CSP restricts the page to `self`-origin resources, inline styles/script
 
 GitHub Gists have a **100 MB per-file limit**. Since the CRM stores only text (names, dates, notes), a single contact with detailed notes is roughly 500–1,000 bytes. At that rate, you would need **100,000+ entries** to approach the limit — decades of daily use.
 
-Storage via GitHub Gists is **free** with no recurring cost. In the unlikely event your data approaches the limit, you can use the built-in **Markdown export** button to download your entire database as a `.md` file for archival or migration.
+*Note: Base64 encoding inflates the file size by ~33%. The app actively measures the ciphertext blob and will issue a proactive warning if your data exceeds ~75MB.*
+
+Storage via GitHub Gists is **free** with no recurring cost. In the unlikely event your data approaches the limit, you can use the built-in **Markdown export** button to download your entire database as a `.md` file for archival or migration. Additionally, because the data is backed by GitHub Git architecture, you can always revert to prior versions of your database using Gist History natively if corruption occurs.
 
 ## Built With
 
