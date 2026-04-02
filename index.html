@@ -263,47 +263,65 @@ async function loadFromGist() {
     if (!id) return false;
     const g    = await gh('/gists/' + id);
     const file = g.files[GIST_FILE];
+    if (!file) return false;
     const raw  = file.truncated 
         ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text() 
         : file.content;
     const parsed = JSON.parse(await decrypt(token, raw.trim()));
-    contacts = parsed;
-    contacts.personal     = contacts.personal     || [];
-    contacts.professional = contacts.professional || [];
-    contacts.notesDiary   = contacts.notesDiary   || [];
+    if (!parsed || typeof parsed !== 'object') throw new Error('Invalid data format');
+    contacts = {
+        personal:     Array.isArray(parsed.personal)     ? parsed.personal     : [],
+        professional: Array.isArray(parsed.professional) ? parsed.professional : [],
+        notesDiary:   Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : []
+    };
     migrateNotes();
     return true;
 }
 
 
+let _saveTimer = null;
 async function saveToGist() {
+    if (!token) return;
+    // Debounce rapid saves to avoid race conditions
+    if (_saveTimer) clearTimeout(_saveTimer);
     setSyncBadge('syncing');
-    try {
-        const content = await encrypt(token, JSON.stringify(contacts));
-        const body    = JSON.stringify({
-            description: 'Personal CRM data — do not edit manually',
-            public: false,
-            files: { [GIST_FILE]: { content } }
-        });
-        let id = localStorage.getItem(getGistKey());
-        if (id) {
-            try { await gh('/gists/' + id, { method:'PATCH', body }); }
-            catch { id = null; localStorage.removeItem(getGistKey()); }
-        }
-        if (!id) {
-            id = await findGist();
-            if (id) {
-                await gh('/gists/' + id, { method:'PATCH', body });
-            } else {
-                const g = await gh('/gists', { method:'POST', body });
-                id = g.id;
-                localStorage.setItem(getGistKey(), id);
+    return new Promise(resolve => {
+        _saveTimer = setTimeout(async () => {
+            try {
+                const snapshot = JSON.stringify(contacts);
+                const content = await encrypt(token, snapshot);
+                const body    = JSON.stringify({
+                    description: 'Personal CRM data — do not edit manually',
+                    public: false,
+                    files: { [GIST_FILE]: { content } }
+                });
+                let id = localStorage.getItem(getGistKey());
+                if (id) {
+                    try {
+                        await gh('/gists/' + id, { method:'PATCH', body });
+                        localStorage.setItem(getGistKey(), id);
+                    } catch {
+                        id = null;
+                        localStorage.removeItem(getGistKey());
+                    }
+                }
+                if (!id) {
+                    id = await findGist();
+                    if (id) {
+                        await gh('/gists/' + id, { method:'PATCH', body });
+                    } else {
+                        const g = await gh('/gists', { method:'POST', body });
+                        id = g.id;
+                    }
+                    localStorage.setItem(getGistKey(), id);
+                }
+                setSyncBadge('ok');
+            } catch {
+                setSyncBadge('err');
             }
-        }
-        setSyncBadge('ok');
-    } catch {
-        setSyncBadge('err');
-    }
+            resolve();
+        }, 400);
+    });
 }
 
 
@@ -433,6 +451,7 @@ async function handleLogin(tok) {
 function handleLogout(msg = '') {
     token = '';
     username = '';
+    contacts = { personal:[], professional:[], notesDiary:[] };
     sessionStorage.removeItem('gh_crm_token');
     clearTimeout(logoutTimer);
     renderLogin(msg);
@@ -612,7 +631,7 @@ function openNoteModal(editId) {
 function renderTable() {
     let list = contacts[currentTab].filter(c => {
         const matchesSearch = !searchQuery || 
-            c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
             (c.institution && c.institution.toLowerCase().includes(searchQuery.toLowerCase())) ||
             (c.region && c.region.toLowerCase().includes(searchQuery.toLowerCase())) ||
             (c.notes && c.notes.some(n => n.text.toLowerCase().includes(searchQuery.toLowerCase())));
@@ -683,7 +702,9 @@ function attachTableEvents() {
 
 function refreshBadges() {
     document.querySelectorAll('.tab-btn').forEach(b => {
-        const n = overdueCount(b.dataset.tab), ex = b.querySelector('.tab-badge');
+        const tab = b.dataset.tab;
+        if (tab === 'notes') return;
+        const n = overdueCount(tab), ex = b.querySelector('.tab-badge');
         if (n > 0) { if (ex) ex.textContent=n; else b.insertAdjacentHTML('beforeend',`<span class="tab-badge">${n}</span>`); }
         else if (ex) ex.remove();
     });
