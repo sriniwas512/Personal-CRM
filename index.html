@@ -173,7 +173,7 @@ async function decrypt(secret, b64) {
 let token = sessionStorage.getItem('gh_crm_token') || '';
 let username = '';
 let currentTab = 'professional';
-let contacts = { personal:[], professional:[] };
+let contacts = { personal:[], professional:[], notesDiary:[] };
 
 // Filtering/Sorting State
 let searchQuery = '';
@@ -270,6 +270,7 @@ async function loadFromGist() {
     contacts = parsed;
     contacts.personal     = contacts.personal     || [];
     contacts.professional = contacts.professional || [];
+    contacts.notesDiary   = contacts.notesDiary   || [];
     migrateNotes();
     return true;
 }
@@ -337,7 +338,7 @@ function overdueCount(tab) { return contacts[tab].filter(c => getStatus(c.nextCo
 
 function downloadMarkdown() {
     let md = `# Personal CRM Export - ${today()}\n\n`;
-    ['personal', 'professional'].forEach(tab => {
+    ['professional', 'personal'].forEach(tab => {
         md += `## ${tab.charAt(0).toUpperCase() + tab.slice(1)} Contacts\n\n`;
         contacts[tab].forEach(c => {
             md += `### ${c.name}\n- **Institution**: ${c.institution || '—'}\n- **Region**: ${c.region || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
@@ -350,6 +351,15 @@ function downloadMarkdown() {
             md += `\n`;
         });
     });
+    
+    if (contacts.notesDiary && contacts.notesDiary.length > 0) {
+        md += `--- \n\n## General Notes Diary\n\n`;
+        const sortedDiary = [...contacts.notesDiary].sort((a,b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
+        sortedDiary.forEach(n => {
+            md += `### ${fmtDate(n.date)}\n${n.text}\n\n`;
+        });
+    }
+    
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -410,7 +420,7 @@ async function handleLogin(tok) {
         // Try loading existing data; if none, start fresh
         let loaded = false;
         try { loaded = await loadFromGist(); } catch {}
-        if (!loaded) contacts = { personal:[], professional:[] };
+        if (!loaded) contacts = { personal:[], professional:[], notesDiary:[] };
         renderApp();
     } catch (e) {
         token = '';
@@ -437,14 +447,10 @@ if (token) {
             await loadFromGist();
             renderApp();
         } catch {
-            sessionStorage.removeItem('gh_crm_token');
-            token = '';
-            renderLogin();
+            handleLogout();
         }
     })();
 }
-
-
 // ── APP ───────────────────────────────────────────────────────────────────────
 function renderApp() {
     const po = overdueCount('personal'), bo = overdueCount('professional');
@@ -463,16 +469,18 @@ function renderApp() {
     <nav class="tabs">
         <button class="tab-btn ${currentTab==='professional'?'active':''}" data-tab="professional">Professional${bo?`<span class="tab-badge">${bo}</span>`:''}</button>
         <button class="tab-btn ${currentTab==='personal'?'active':''}" data-tab="personal">Personal${po?`<span class="tab-badge">${po}</span>`:''}</button>
+        <button class="tab-btn ${currentTab==='notes'?'active':''}" data-tab="notes">Notes</button>
     </nav>
     <main class="main-content">
         <div class="section-header">
-            <h2 class="section-title">${currentTab==='personal'?'Personal':'Professional'} Contacts</h2>
+            <h2 class="section-title">${currentTab==='notes'?'Notes Diary':(currentTab==='personal'?'Personal':'Professional')+' Contacts'}</h2>
             <div style="display:flex; gap:10px;">
                 <button class="btn btn-sm btn-download" id="dl-btn">Download .md</button>
-                <button class="btn-add" id="add-btn">+ Add Contact</button>
+                <button class="btn-add" id="add-btn">${currentTab==='notes'?'+ Add Entry':'+ Add Contact'}</button>
             </div>
         </div>
         
+        ${currentTab !== 'notes' ? `
         <div class="filter-bar">
             <div class="filter-group">
                 <span class="filter-label">Search</span>
@@ -496,32 +504,109 @@ function renderApp() {
                     })()}
                 </select>
             </div>
-        </div>
+        </div>` : ''}
 
-        <div class="contacts-wrapper"><div class="table-scroll" id="tbl">${renderTable()}</div></div>
+        <div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : renderTable()}</div></div>
     </main>`;
 
     document.getElementById('logout-btn').onclick = () => handleLogout();
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; renderApp(); });
-    document.getElementById('add-btn').onclick = () => openModal(null);
+    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     
-    const sIn = document.getElementById('search-in');
-    sIn.oninput = () => { searchQuery = sIn.value; refreshTable(); };
-    
-    document.getElementById('inst-filter').onchange = (e) => { selectedInstitution = e.target.value; refreshTable(); };
-    
-    const regF = document.getElementById('region-filter');
-    if (regF) regF.onchange = (e) => { selectedRegion = e.target.value; refreshTable(); };
-
-    attachTableEvents();
+    if (currentTab !== 'notes') {
+        const sIn = document.getElementById('search-in');
+        if (sIn) sIn.oninput = () => { searchQuery = sIn.value; refreshTable(); };
+        const instF = document.getElementById('inst-filter');
+        if (instF) instF.onchange = (e) => { selectedInstitution = e.target.value; refreshTable(); };
+        const regF = document.getElementById('region-filter');
+        if (regF) regF.onchange = (e) => { selectedRegion = e.target.value; refreshTable(); };
+        attachTableEvents();
+    } else {
+        attachNotesTableEvents();
+    }
 }
 
 function refreshTable() {
-    document.getElementById('tbl').innerHTML = renderTable();
-    attachTableEvents();
+    document.getElementById('tbl').innerHTML = currentTab === 'notes' ? renderNotesTable() : renderTable();
+    currentTab === 'notes' ? attachNotesTableEvents() : attachTableEvents();
 }
 
+function renderNotesTable() {
+    const list = [...(contacts.notesDiary || [])].sort((a,b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
+    if (!list.length) return `<div class="empty-state"><div class="icon">📓</div><p>No diary entries yet.</p></div>`;
+    
+    return `<table><thead><tr>
+        <th style="width: 150px;">Date</th>
+        <th>Note</th>
+        <th style="width: 150px;">Actions</th>
+    </tr></thead><tbody>` +
+    list.map(n => `
+        <tr>
+            <td><span class="contact-name">${fmtDate(n.date)}</span></td>
+            <td><div style="white-space: pre-wrap; font-size: 14px;">${esc(n.text)}</div></td>
+            <td><div class="action-btns">
+                <button class="btn-icon edit-note-btn" data-id="${n.id}">Edit</button>
+                <button class="btn-icon delete delete-note-btn" data-id="${n.id}">Delete</button>
+            </div></td>
+        </tr>
+    `).join('') + '</tbody></table>';
+}
+
+function attachNotesTableEvents() {
+    document.querySelectorAll('.edit-note-btn').forEach(b => b.onclick = () => openNoteModal(b.dataset.id));
+    document.querySelectorAll('.delete-note-btn').forEach(b => b.onclick = async () => {
+        if (!confirm('Delete this diary entry?')) return;
+        contacts.notesDiary = contacts.notesDiary.filter(n => n.id !== b.dataset.id);
+        saveToGist();
+        refreshTable();
+        toast('Entry deleted.');
+    });
+}
+
+function openNoteModal(editId) {
+    const entry = editId ? contacts.notesDiary.find(n => n.id === editId) : null;
+    
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="mo-note">
+        <div class="modal">
+            <div class="modal-header"><h3 class="modal-title">${entry?'Edit':'Add'} Diary Entry</h3><button class="modal-close" id="mc-note">&times;</button></div>
+            <div class="form-group"><label>Date <span style="color:var(--danger)">*</span></label>
+                <input type="date" id="n-date" class="form-control" value="${entry?.date||today()}"></div>
+            <div class="form-group"><label>Note <span style="color:var(--danger)">*</span></label>
+                <textarea id="n-text" class="form-control" placeholder="Write your general diary entry here..." style="min-height: 200px;">${esc(entry?.text||'')}</textarea></div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" id="mc-note2">Cancel</button>
+                <button class="btn btn-primary" id="ms-note" style="width:auto;">${entry?'Save Entry':'Add Entry'}</button>
+            </div>
+        </div>
+    </div>`);
+
+    const close = () => { document.getElementById('mo-note').remove(); };
+    document.getElementById('mc-note').onclick = close;
+    document.getElementById('mc-note2').onclick = close;
+    document.getElementById('mo-note').onclick = e => { if (e.target.id==='mo-note') close(); };
+    
+    document.getElementById('ms-note').onclick = async () => {
+        const date = document.getElementById('n-date').value;
+        const text = document.getElementById('n-text').value.trim();
+        if (!date || !text) { alert('Please enter both date and note.'); return; }
+        
+        const noteData = { id: entry?.id || genId(), date, text };
+        
+        if (editId) {
+            const i = contacts.notesDiary.findIndex(n => n.id === editId);
+            if (i !== -1) contacts.notesDiary[i] = noteData;
+        } else {
+            contacts.notesDiary.push(noteData);
+        }
+        
+        close();
+        saveToGist();
+        refreshTable();
+        toast(editId ? 'Entry updated.' : 'Entry added.');
+    };
+}
 
 // ── TABLE ─────────────────────────────────────────────────────────────────────
 function renderTable() {
