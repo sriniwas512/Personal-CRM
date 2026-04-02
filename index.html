@@ -464,13 +464,22 @@ async function handleLogin(tok) {
         sessionStorage.setItem('gh_crm_token', token);
         // Try loading existing data; if none, start fresh
         let loaded = false;
-        try { loaded = await loadFromGist(); } catch {}
+        try { 
+            loaded = await loadFromGist(); 
+        } catch (err) {
+            console.error('Data load exception:', err);
+            throw new Error('DECRYPT_FAIL');
+        }
         if (!loaded) contacts = { personal:[], professional:[], notesDiary:[] };
         renderApp();
     } catch (e) {
         token = '';
         sessionStorage.removeItem('gh_crm_token');
-        renderLogin(e.name === 'AbortError' ? 'Request timed out.' : (e.message === '401' ? 'Invalid token. Please check and try again.' : 'Could not connect to GitHub. Check your token and network.'));
+        let msg = 'Could not connect to GitHub. Check your token and network.';
+        if (e.name === 'AbortError') msg = 'Request timed out.';
+        else if (e.message === '401') msg = 'Invalid token. Please check and try again.';
+        else if (e.message === 'DECRYPT_FAIL') msg = 'Incorrect token or corrupted data. Decryption failed.';
+        renderLogin(msg);
     }
     resetLogoutTimer();
 }
@@ -492,8 +501,8 @@ if (token) {
             username = user.login;
             await loadFromGist();
             renderApp();
-        } catch {
-            handleLogout();
+        } catch (e) {
+            handleLogout('Session expired or decryption failed. Please log in again.');
         }
     })();
 }
