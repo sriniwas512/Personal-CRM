@@ -185,10 +185,17 @@ let selectedInstitution = 'All';
 let selectedRegion = 'All';
 let sortConfig = { key: 'nextContact', direction: 'asc' };
 let logoutTimer;
+let logoutWarningTimer;
+let lastSyncDate = null;
 
 function resetLogoutTimer() {
     clearTimeout(logoutTimer);
+    clearTimeout(logoutWarningTimer);
     if (token) {
+        logoutWarningTimer = setTimeout(() => {
+            toast('⏳ Your session will expire in 60 seconds. Move your mouse or press a key to stay logged in.', 10000);
+        }, 540000); // 9 minutes
+        
         logoutTimer = setTimeout(() => {
             handleLogout('You have been logged out due to inactivity.');
         }, 600000); // 10 minutes
@@ -273,6 +280,7 @@ async function loadFromGist() {
         : file.content;
     const parsed = JSON.parse(await decrypt(token, raw.trim()));
     if (!parsed || typeof parsed !== 'object') throw new Error('Invalid data format');
+    lastSyncDate = g.updated_at;
     contacts = {
         personal:     Array.isArray(parsed.personal)     ? parsed.personal     : [],
         professional: Array.isArray(parsed.professional) ? parsed.professional : [],
@@ -295,10 +303,9 @@ async function saveToGist() {
                 const snapshot = JSON.stringify(contacts);
                 const content = await encrypt(token, snapshot);
                 
-                // Storage warning check (warn at 90MB limit out of 100MB)
-                // 90 MB = 94,371,840 bytes. We use length of the base64 string as a conservative estimate.
-                if (content.length > 94371840) {
-                    toast('⚠ Storage is over 90% full! Please export (.md) your data soon.', 10000);
+                // Storage warning check (warn at 75MB base64 size to safely avoid 100MB hard limit)
+                if (content.length > 78643200) {
+                    toast('⚠ Storage is reaching limits! Please export (.md) your data soon as a backup.', 10000);
                 }
 
                 const body    = JSON.stringify({
@@ -309,7 +316,14 @@ async function saveToGist() {
                 let id = localStorage.getItem(getGistKey());
                 if (id) {
                     try {
-                        await gh('/gists/' + id, { method:'PATCH', body });
+                        const meta = await gh(`/gists/${id}`);
+                        if (lastSyncDate && meta.updated_at && (new Date(meta.updated_at) > new Date(lastSyncDate))) {
+                            toast('⚠ Conflict! Another device modified this data. Please export (.md) to save work before refreshing.', 15000);
+                            setSyncBadge('err');
+                            return resolve();
+                        }
+                        const res = await gh('/gists/' + id, { method:'PATCH', body });
+                        lastSyncDate = res.updated_at;
                         localStorage.setItem(getGistKey(), id);
                     } catch {
                         id = null;
@@ -319,10 +333,12 @@ async function saveToGist() {
                 if (!id) {
                     id = await findGist();
                     if (id) {
-                        await gh('/gists/' + id, { method:'PATCH', body });
+                        const res = await gh('/gists/' + id, { method:'PATCH', body });
+                        lastSyncDate = res.updated_at;
                     } else {
                         const g = await gh('/gists', { method:'POST', body });
                         id = g.id;
+                        lastSyncDate = g.updated_at;
                     }
                     localStorage.setItem(getGistKey(), id);
                 }
