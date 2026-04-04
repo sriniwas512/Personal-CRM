@@ -187,6 +187,7 @@ let sortConfig = { key: 'nextContact', direction: 'asc' };
 let logoutTimer;
 let logoutWarningTimer;
 let lastSyncDate = null;
+let lastSyncThrewError = false;
 
 function resetLogoutTimer() {
     clearTimeout(logoutTimer);
@@ -271,16 +272,40 @@ function migrateNotes() {
 
 async function loadFromGist() {
     const id = await findGist();
-    if (!id) return false;
-    const g    = await gh('/gists/' + id);
-    const file = g.files[GIST_FILE];
-    if (!file) return false;
-    const raw  = file.truncated 
-        ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text() 
-        : file.content;
-    const parsed = JSON.parse(await decrypt(token, raw.trim()));
+    let remoteRaw = null;
+    let remoteDate = 0;
+    
+    if (id) {
+        const g    = await gh('/gists/' + id);
+        const file = g.files[GIST_FILE];
+        if (file) {
+            remoteRaw = file.truncated 
+                ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text() 
+                : file.content;
+            remoteDate = new Date(g.updated_at).getTime();
+            lastSyncDate = g.updated_at;
+        }
+    }
+    
+    let rawToUse = remoteRaw;
+    
+    // Check for offline/failed sync backup
+    const localBackup = localStorage.getItem('crm_local_backup');
+    const localBackupTime = parseInt(localStorage.getItem('crm_local_backup_time') || '0');
+    
+    if (localBackup && localBackupTime > remoteDate + 5000) {
+        if (confirm("Detected unsynced changes from a previous session on this device. Do you want to restore them?")) {
+            rawToUse = localBackup;
+            // Set a flag so we attempt to push it to remote
+            setTimeout(saveToGist, 2000); 
+        }
+    }
+
+    if (!rawToUse) return false;
+    
+    const parsed = JSON.parse(await decrypt(token, rawToUse.trim()));
     if (!parsed || typeof parsed !== 'object') throw new Error('Invalid data format');
-    lastSyncDate = g.updated_at;
+    
     contacts = {
         personal:     Array.isArray(parsed.personal)     ? parsed.personal     : [],
         professional: Array.isArray(parsed.professional) ? parsed.professional : [],
@@ -303,6 +328,11 @@ async function saveToGist() {
                 const snapshot = JSON.stringify(contacts);
                 const content = await encrypt(token, snapshot);
                 
+                try {
+                    localStorage.setItem('crm_local_backup', content);
+                    localStorage.setItem('crm_local_backup_time', Date.now().toString());
+                } catch(e) { console.warn('Local storage full, offline backup skipped'); }
+                
                 // Storage warning check (warn at 75MB base64 size to safely avoid 100MB hard limit)
                 if (content.length > 78643200) {
                     toast('⚠ Storage is reaching limits! Please export (.md) your data soon as a backup.', 10000);
@@ -317,13 +347,14 @@ async function saveToGist() {
                 if (id) {
                     try {
                         const meta = await gh(`/gists/${id}`);
-                        if (lastSyncDate && meta.updated_at && (new Date(meta.updated_at) > new Date(lastSyncDate))) {
+                        if (!lastSyncThrewError && lastSyncDate && meta.updated_at && (new Date(meta.updated_at) > new Date(lastSyncDate))) {
                             toast('⚠ Conflict! Another device modified this data. Please export (.md) to save work before refreshing.', 15000);
                             setSyncBadge('err');
                             return resolve();
                         }
                         const res = await gh('/gists/' + id, { method:'PATCH', body });
                         lastSyncDate = res.updated_at;
+                        lastSyncThrewError = false;
                         localStorage.setItem(getGistKey(), id);
                     } catch {
                         id = null;
@@ -342,9 +373,18 @@ async function saveToGist() {
                     }
                     localStorage.setItem(getGistKey(), id);
                 }
+                lastSyncThrewError = false;
                 setSyncBadge('ok');
             } catch {
                 setSyncBadge('err');
+                lastSyncThrewError = true;
+                // Auto-retry in background to ensure data is synced when connection restores
+                if (!window.retryTimer) {
+                    window.retryTimer = setTimeout(() => {
+                        window.retryTimer = null;
+                        saveToGist();
+                    }, 5000);
+                }
             }
             resolve();
         }, 400);
@@ -516,6 +556,10 @@ function handleLogout(msg = '') {
     // Wipe DOM to remove decrypted text fragments
     const root = document.getElementById('root');
     if (root) root.innerHTML = '';
+    
+    // Also clear the offline browser backup so switching accounts doesn't load it
+    localStorage.removeItem('crm_local_backup');
+    localStorage.removeItem('crm_local_backup_time');
     
     renderLogin(msg);
 }
@@ -909,6 +953,11 @@ function openModal(editId) {
         if (!name) { alert('Please enter a name.'); return; }
         if (!last) { alert('Please enter the last contact date.'); return; }
         if (!next) { alert('Please enter the next contact date.'); return; }
+        
+        const pendingNote = document.getElementById('new-note-text').value.trim();
+        if (pendingNote) {
+            renderedNotes.unshift({ date: today(), text: pendingNote });
+        }
         
         const contactData = { 
             id: c?.id || genId(), 
