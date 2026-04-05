@@ -762,7 +762,9 @@ function renderTable() {
     </tr></thead><tbody>` +
     list.map(c => {
         const s = getStatus(c.nextContact);
-        const lastNote = c.notes && c.notes.length > 0 ? c.notes[0].text : '—';
+        const lastNote = c.notes && c.notes.length > 0
+            ? [...c.notes].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'))[0].text
+            : '—';
         return `<tr class="${s.diff<0?'overdue-row':''}">
             <td><span class="contact-name" data-id="${c.id}">${esc(c.name)}</span></td>
             <td><span class="institution-text">${esc(c.institution||'—')}</span></td>
@@ -874,6 +876,7 @@ function openModal(editId) {
     // Notes Logic
     const renderedNotes = [...notes];
     const updateNotesUI = () => {
+        renderedNotes.sort((a, b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
         document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
             <div class="note-entry">
                 <span class="note-date" data-index="${i}">${fmtDate(n.date)}</span>
