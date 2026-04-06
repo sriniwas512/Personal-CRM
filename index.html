@@ -217,7 +217,6 @@ let sortConfig = { key: 'nextContact', direction: 'asc' };
 let logoutTimer;
 let logoutWarningTimer;
 let lastSyncDate = null;
-let lastSyncThrewError = false;
 
 function resetLogoutTimer() {
     clearTimeout(logoutTimer);
@@ -358,16 +357,9 @@ async function saveToGist() {
                 let id = gistId;
                 if (id) {
                     try {
-                        const meta = await gh(`/gists/${id}`);
-                        if (!lastSyncThrewError && lastSyncDate && meta.updated_at && (new Date(meta.updated_at) > new Date(lastSyncDate))) {
-                            toast('⚠ Conflict! Another device modified this data. Please export (.md) to save work before refreshing.', 15000);
-                            setSyncBadge('err');
-                            return resolve();
-                        }
                         const res = await gh('/gists/' + id, { method:'PATCH', body });
                         lastSyncDate = res.updated_at;
-                        lastSyncThrewError = false;
-                        gistId = id;
+
                     } catch {
                         id = null;
                         gistId = null;
@@ -385,11 +377,10 @@ async function saveToGist() {
                     }
                     gistId = id;
                 }
-                lastSyncThrewError = false;
                 setSyncBadge('ok');
             } catch {
                 setSyncBadge('err');
-                lastSyncThrewError = true;
+
                 // Auto-retry in background to ensure data is synced when connection restores
                 if (!_retryTimer) {
                     _retryTimer = setTimeout(() => {
