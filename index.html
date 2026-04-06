@@ -490,24 +490,40 @@ function attachTodoEvents() {
             await saveToGist(); refreshTable();
         };
     });
-    // Add item via button
+    // Add item — instant DOM update, save in background
+    function addTodoItem(cardId, inp) {
+        const txt = inp.value.trim();
+        if (!txt) return;
+        const card = contacts.todos.find(c => c.id === cardId);
+        if (!card) return;
+        card.items.push({ text: txt, done: false });
+        inp.value = '';
+        // Append item directly without re-rendering the whole grid
+        const list = document.querySelector(`.todo-items-list[data-card="${cardId}"]`);
+        if (list) {
+            const idx = card.items.length - 1;
+            const div = document.createElement('div');
+            div.className = 'todo-item';
+            div.innerHTML = `<input type="checkbox" data-card="${cardId}" data-idx="${idx}"><span class="todo-item-text">${esc(txt)}</span>`;
+            div.querySelector('input').onchange = function() {
+                card.items[+this.dataset.idx].done = this.checked;
+                this.nextElementSibling.classList.toggle('done', this.checked);
+                saveToGist();
+            };
+            list.appendChild(div);
+        }
+        saveToGist(); // fire-and-forget
+    }
+
     document.querySelectorAll('[data-card-add]').forEach(btn => {
-        btn.onclick = async () => {
+        btn.onclick = () => {
             const inp = document.querySelector(`[data-card-input="${btn.dataset.cardAdd}"]`);
-            const txt = inp ? inp.value.trim() : '';
-            if (!txt) return;
-            const card = contacts.todos.find(c => c.id === btn.dataset.cardAdd);
-            if (card) { card.items.push({ text: txt, done: false }); await saveToGist(); refreshTable(); }
+            if (inp) addTodoItem(btn.dataset.cardAdd, inp);
         };
     });
-    // Add item via Enter key
     document.querySelectorAll('[data-card-input]').forEach(inp => {
-        inp.onkeydown = async (e) => {
-            if (e.key !== 'Enter') return;
-            const txt = inp.value.trim();
-            if (!txt) return;
-            const card = contacts.todos.find(c => c.id === inp.dataset.cardInput);
-            if (card) { card.items.push({ text: txt, done: false }); await saveToGist(); refreshTable(); }
+        inp.onkeydown = e => {
+            if (e.key === 'Enter') addTodoItem(inp.dataset.cardInput, inp);
         };
     });
 }
