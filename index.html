@@ -301,16 +301,14 @@ function migrateNotes() {
 async function loadFromGist() {
     const id = await findGist();
     let remoteRaw = null;
-    let remoteDate = 0;
-    
+
     if (id) {
         const g    = await gh('/gists/' + id);
         const file = g.files[GIST_FILE];
         if (file) {
-            remoteRaw = file.truncated 
-                ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text() 
+            remoteRaw = file.truncated
+                ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text()
                 : file.content;
-            remoteDate = new Date(g.updated_at).getTime();
             lastSyncDate = g.updated_at;
         }
     }
