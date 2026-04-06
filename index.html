@@ -471,11 +471,15 @@ function renderTodosGrid() {
 }
 
 function attachTodoEvents() {
-    // Checkbox toggle
+    // Checkbox toggle — update DOM instantly, save in background
     document.querySelectorAll('.todo-item input[type="checkbox"]').forEach(cb => {
-        cb.onchange = async () => {
+        cb.onchange = () => {
             const card = contacts.todos.find(c => c.id === cb.dataset.card);
-            if (card) { card.items[+cb.dataset.idx].done = cb.checked; await saveToGist(); refreshTable(); }
+            if (!card) return;
+            card.items[+cb.dataset.idx].done = cb.checked;
+            const span = cb.nextElementSibling;
+            if (span) span.classList.toggle('done', cb.checked);
+            saveToGist(); // fire-and-forget
         };
     });
     // Delete card
