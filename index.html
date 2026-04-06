@@ -142,8 +142,12 @@
         .todo-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
         .todo-item { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; }
         .todo-item input[type="checkbox"] { margin-top: 2px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; width: 14px; height: 14px; }
-        .todo-item-text { font-size: 13px; color: var(--text); line-height: 1.5; flex: 1; word-break: break-word; }
-        .todo-item-text.done { text-decoration: line-through; color: var(--text-muted); }
+        .todo-item-text { cursor: pointer; }
+        .todo-item-text:hover { opacity: 0.8; }
+        .todo-item-del { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 14px; padding: 0; opacity: 0; transition: opacity 0.15s; flex-shrink: 0; line-height: 1; }
+        .todo-item:hover .todo-item-del { opacity: 0.45; }
+        .todo-item-del:hover { opacity: 1 !important; }
+        .todo-item-edit { background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 1px 5px; font-size: 13px; font-family: inherit; outline: none; flex: 1; min-width: 0; }
         .todo-card-del { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 15px; opacity: 0.4; line-height: 1; padding: 0; }
         .todo-card-del:hover { color: var(--danger); opacity: 1; }
         .todo-add-item { display: flex; gap: 6px; margin-top: 4px; }
@@ -468,7 +472,8 @@ function renderTodosGrid() {
                 ${items.map((item, idx) => `
                 <div class="todo-item">
                     <input type="checkbox" data-card="${card.id}" data-idx="${idx}" ${item.done ? 'checked' : ''}>
-                    <span class="todo-item-text${item.done?' done':''}">${esc(item.text)}</span>
+                    <span class="todo-item-text${item.done?' done':''}" data-card="${card.id}" data-idx="${idx}">${esc(item.text)}</span>
+                    <button class="todo-item-del" data-card="${card.id}" data-idx="${idx}" title="Delete task">×</button>
                 </div>`).join('')}
             </div>
             <div class="todo-add-item">
@@ -479,17 +484,75 @@ function renderTodosGrid() {
     }).join('') + `</div>`;
 }
 
-function attachTodoEvents() {
-    // Checkbox toggle — update DOM instantly, save in background
-    document.querySelectorAll('.todo-item input[type="checkbox"]').forEach(cb => {
+// Re-renders just one card's items list and re-wires all events
+function rerenderCardItems(cardId) {
+    const card = contacts.todos.find(c => c.id === cardId);
+    if (!card) return;
+    const list = document.querySelector(`.todo-items-list[data-card="${cardId}"]`);
+    if (!list) return;
+    list.innerHTML = card.items.map((item, i) => `
+        <div class="todo-item">
+            <input type="checkbox" data-card="${cardId}" data-idx="${i}" ${item.done ? 'checked' : ''}>
+            <span class="todo-item-text${item.done?' done':''}" data-card="${cardId}" data-idx="${i}">${esc(item.text)}</span>
+            <button class="todo-item-del" data-card="${cardId}" data-idx="${i}" title="Delete task">×</button>
+        </div>`).join('');
+    wireCardItemEvents(list, card);
+}
+
+function wireCardItemEvents(list, card) {
+    list.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.onchange = () => {
-            const card = contacts.todos.find(c => c.id === cb.dataset.card);
-            if (!card) return;
             card.items[+cb.dataset.idx].done = cb.checked;
-            const span = cb.nextElementSibling;
-            if (span) span.classList.toggle('done', cb.checked);
-            saveToGist(); // fire-and-forget
+            cb.nextElementSibling.classList.toggle('done', cb.checked);
+            saveToGist();
         };
+    });
+    list.querySelectorAll('.todo-item-text').forEach(span => wireTextEdit(span, card));
+    list.querySelectorAll('.todo-item-del').forEach(btn => {
+        btn.onclick = () => {
+            card.items.splice(+btn.dataset.idx, 1);
+            rerenderCardItems(card.id);
+            saveToGist();
+        };
+    });
+}
+
+function wireTextEdit(span, card) {
+    span.onclick = () => {
+        const idx = +span.dataset.idx;
+        const originalText = card.items[idx].text;
+        const done = card.items[idx].done;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'todo-item-edit';
+        input.value = originalText;
+        span.replaceWith(input);
+        input.focus(); input.select();
+        const finish = () => {
+            const newText = input.value.trim();
+            if (newText) card.items[idx].text = newText;
+            if (newText && newText !== originalText) saveToGist();
+            const newSpan = document.createElement('span');
+            newSpan.className = `todo-item-text${done ? ' done' : ''}`;
+            newSpan.dataset.card = card.id;
+            newSpan.dataset.idx = idx;
+            newSpan.textContent = newText || originalText;
+            input.replaceWith(newSpan);
+            wireTextEdit(newSpan, card);
+        };
+        input.onblur = finish;
+        input.onkeydown = e => {
+            if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { input.value = originalText; input.blur(); }
+        };
+    };
+}
+
+function attachTodoEvents() {
+    // Wire items for every card
+    document.querySelectorAll('.todo-items-list').forEach(list => {
+        const card = contacts.todos.find(c => c.id === list.dataset.card);
+        if (card) wireCardItemEvents(list, card);
     });
     // Delete card
     document.querySelectorAll('[data-del]').forEach(btn => {
@@ -499,7 +562,7 @@ function attachTodoEvents() {
             await saveToGist(); refreshTable();
         };
     });
-    // Add item — instant DOM update, save in background
+    // Add item — instant re-render of card items, save in background
     function addTodoItem(cardId, inp) {
         const txt = inp.value.trim();
         if (!txt) return;
@@ -507,23 +570,9 @@ function attachTodoEvents() {
         if (!card) return;
         card.items.push({ text: txt, done: false });
         inp.value = '';
-        // Append item directly without re-rendering the whole grid
-        const list = document.querySelector(`.todo-items-list[data-card="${cardId}"]`);
-        if (list) {
-            const idx = card.items.length - 1;
-            const div = document.createElement('div');
-            div.className = 'todo-item';
-            div.innerHTML = `<input type="checkbox" data-card="${cardId}" data-idx="${idx}"><span class="todo-item-text">${esc(txt)}</span>`;
-            div.querySelector('input').onchange = function() {
-                card.items[+this.dataset.idx].done = this.checked;
-                this.nextElementSibling.classList.toggle('done', this.checked);
-                saveToGist();
-            };
-            list.appendChild(div);
-        }
-        saveToGist(); // fire-and-forget
+        rerenderCardItems(cardId);
+        saveToGist();
     }
-
     document.querySelectorAll('[data-card-add]').forEach(btn => {
         btn.onclick = () => {
             const inp = document.querySelector(`[data-card-input="${btn.dataset.cardAdd}"]`);
@@ -531,9 +580,7 @@ function attachTodoEvents() {
         };
     });
     document.querySelectorAll('[data-card-input]').forEach(inp => {
-        inp.onkeydown = e => {
-            if (e.key === 'Enter') addTodoItem(inp.dataset.cardInput, inp);
-        };
+        inp.onkeydown = e => { if (e.key === 'Enter') addTodoItem(inp.dataset.cardInput, inp); };
     });
 }
 
