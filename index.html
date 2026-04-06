@@ -200,7 +200,7 @@ async function decrypt(secret, b64) {
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let token = sessionStorage.getItem('gh_crm_token') || '';
+let token = '';
 let username = '';
 let currentTab = 'professional';
 let contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
@@ -237,7 +237,7 @@ function resetLogoutTimer() {
 });
 
 const GIST_FILE = 'personal-crm-sync.enc';
-function getGistKey() { return `crm_gist_id_${username}`; }
+let gistId = null;
 
 
 // ── GITHUB API ────────────────────────────────────────────────────────────────
@@ -264,13 +264,12 @@ async function gh(path, opts = {}) {
 
 
 async function findGist() {
-    const cached = localStorage.getItem(getGistKey());
-    if (cached) {
+    if (gistId) {
         try {
-            const g = await gh('/gists/' + cached);
-            if (g.files[GIST_FILE]) return cached;
+            const g = await gh('/gists/' + gistId);
+            if (g.files[GIST_FILE]) return gistId;
         } catch {}
-        localStorage.removeItem(getGistKey());
+        gistId = null;
     }
     // Scan for existing gist (handles new device login)
     let page = 1;
@@ -278,7 +277,7 @@ async function findGist() {
         const list = await gh(`/gists?per_page=100&page=${page}`);
         if (!list.length) break;
         const found = list.find(g => g.files && g.files[GIST_FILE]);
-        if (found) { localStorage.setItem(getGistKey(), found.id); return found.id; }
+        if (found) { gistId = found.id; return found.id; }
         if (list.length < 100) break;
         page++;
     }
@@ -317,18 +316,6 @@ async function loadFromGist() {
     }
     
     let rawToUse = remoteRaw;
-    
-    // Check for offline/failed sync backup
-    const localBackup = localStorage.getItem('crm_local_backup');
-    const localBackupTime = parseInt(localStorage.getItem('crm_local_backup_time') || '0');
-    
-    if (localBackup && localBackupTime > remoteDate + 5000) {
-        if (confirm("Detected unsynced changes from a previous session on this device. Do you want to restore them?")) {
-            rawToUse = localBackup;
-            // Set a flag so we attempt to push it to remote
-            setTimeout(saveToGist, 2000); 
-        }
-    }
 
     if (!rawToUse) return false;
     
@@ -358,12 +345,7 @@ async function saveToGist() {
             try {
                 const snapshot = JSON.stringify(contacts);
                 const content = await encrypt(token, snapshot);
-                
-                try {
-                    localStorage.setItem('crm_local_backup', content);
-                    localStorage.setItem('crm_local_backup_time', Date.now().toString());
-                } catch(e) { console.warn('Local storage full, offline backup skipped'); }
-                
+
                 // Storage warning check (warn at 75MB base64 size to safely avoid 100MB hard limit)
                 if (content.length > 78643200) {
                     toast('⚠ Storage is reaching limits! Please export (.md) your data soon as a backup.', 10000);
@@ -374,7 +356,7 @@ async function saveToGist() {
                     public: false,
                     files: { [GIST_FILE]: { content } }
                 });
-                let id = localStorage.getItem(getGistKey());
+                let id = gistId;
                 if (id) {
                     try {
                         const meta = await gh(`/gists/${id}`);
@@ -386,10 +368,10 @@ async function saveToGist() {
                         const res = await gh('/gists/' + id, { method:'PATCH', body });
                         lastSyncDate = res.updated_at;
                         lastSyncThrewError = false;
-                        localStorage.setItem(getGistKey(), id);
+                        gistId = id;
                     } catch {
                         id = null;
-                        localStorage.removeItem(getGistKey());
+                        gistId = null;
                     }
                 }
                 if (!id) {
@@ -402,7 +384,7 @@ async function saveToGist() {
                         id = g.id;
                         lastSyncDate = g.updated_at;
                     }
-                    localStorage.setItem(getGistKey(), id);
+                    gistId = id;
                 }
                 lastSyncThrewError = false;
                 setSyncBadge('ok');
@@ -718,7 +700,6 @@ async function handleLogin(tok) {
         // Verify token via GitHub — this IS the authentication
         const user = await gh('/user');
         username = user.login;
-        sessionStorage.setItem('gh_crm_token', token);
         // Try loading existing data; if none, start fresh
         let loaded = false;
         try {
@@ -730,7 +711,6 @@ async function handleLogin(tok) {
         renderApp();
     } catch (e) {
         token = '';
-        sessionStorage.removeItem('gh_crm_token');
         let msg = 'Could not connect to GitHub. Check your token and network.';
         if (e.name === 'AbortError') msg = 'Request timed out.';
         else if (e.message === '401') msg = 'Invalid token. Please check and try again.';
@@ -765,34 +745,17 @@ function handleLogout(msg = '') {
     scramble(contacts);
     
     contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
-    sessionStorage.removeItem('gh_crm_token');
+    gistId = null;
     clearTimeout(logoutTimer);
     clearTimeout(logoutWarningTimer);
-    
+
     // Wipe DOM to remove decrypted text fragments
     const root = document.getElementById('root');
     if (root) root.innerHTML = '';
-    
-    // Also clear the offline browser backup so switching accounts doesn't load it
-    localStorage.removeItem('crm_local_backup');
-    localStorage.removeItem('crm_local_backup_time');
-    
+
     renderLogin(msg);
 }
 
-// Auto-login if token is in sessionStorage
-if (token) {
-    (async () => {
-        try {
-            const user = await gh('/user');
-            username = user.login;
-            await loadFromGist();
-            renderApp();
-        } catch (e) {
-            handleLogout('Session expired or decryption failed. Please log in again.');
-        }
-    })();
-}
 // ── APP ───────────────────────────────────────────────────────────────────────
 function renderApp() {
     const po = overdueCount('personal'), bo = overdueCount('professional');
