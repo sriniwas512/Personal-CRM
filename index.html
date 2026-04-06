@@ -969,6 +969,7 @@ function renderTable() {
     const sortCls = (key) => sortConfig.key === key ? (sortConfig.direction === 'asc' ? 'sortable asc' : 'sortable desc') : 'sortable';
 
     return `<table><thead><tr>
+        <th style="width:40px; text-align:center;">#</th>
         <th class="${sortCls('name')}" data-sort="name">Name</th>
         <th class="${sortCls('institution')}" data-sort="institution">Institution / Company</th>
         <th class="${sortCls('region')}" data-sort="region">Region</th>
@@ -976,12 +977,13 @@ function renderTable() {
         <th class="${sortCls('nextContact')}" data-sort="nextContact">Next Contact</th>
         <th>Status</th><th>Latest Note</th><th>Actions</th>
     </tr></thead><tbody>` +
-    list.map(c => {
+    list.map((c, idx) => {
         const s = getStatus(c.nextContact);
         const lastNote = c.notes && c.notes.length > 0
             ? [...c.notes].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'))[0].text
             : '—';
         return `<tr class="${s.diff<0?'overdue-row':''}">
+            <td style="text-align:center; color:var(--text-muted); font-size:13px;">${idx + 1}</td>
             <td><span class="contact-name" data-id="${c.id}">${esc(c.name)}</span></td>
             <td><span class="institution-text">${esc(c.institution||'—')}</span></td>
             <td><span class="institution-text">${esc(c.region||'—')}</span></td>
