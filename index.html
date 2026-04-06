@@ -134,6 +134,28 @@
         th.sortable.asc::after { content: '↑'; opacity: 1; color: var(--primary); }
         th.sortable.desc::after { content: '↓'; opacity: 1; color: var(--primary); }
 
+        /* TODO GRID */
+        .todo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; align-items: start; }
+        .todo-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; position: relative; display: flex; flex-direction: column; gap: 8px; }
+        .todo-card-date { font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em; }
+        .todo-card-title { font-size: 14px; font-weight: 700; color: var(--text); word-break: break-word; padding-right: 20px; }
+        .todo-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+        .todo-item { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; }
+        .todo-item input[type="checkbox"] { margin-top: 2px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; width: 14px; height: 14px; }
+        .todo-item-text { font-size: 13px; color: var(--text); line-height: 1.5; flex: 1; word-break: break-word; }
+        .todo-item-text.done { text-decoration: line-through; color: var(--text-muted); }
+        .todo-card-del { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 15px; opacity: 0.4; line-height: 1; padding: 0; }
+        .todo-card-del:hover { color: var(--danger); opacity: 1; }
+        .todo-add-item { display: flex; gap: 6px; margin-top: 4px; }
+        .todo-add-item input { flex: 1; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); outline: none; font-family: inherit; min-width: 0; }
+        .todo-add-item input:focus { border-color: var(--primary); }
+        .todo-add-item button { background: var(--primary); color: #1a1b26; border: none; border-radius: 6px; padding: 5px 10px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+        .todo-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .todo-empty .icon { font-size: 48px; margin-bottom: 12px; }
+        @media(max-width: 1100px) { .todo-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media(max-width: 860px)  { .todo-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media(max-width: 600px)  { .todo-grid { grid-template-columns: repeat(2, 1fr); } }
+
         /* TOAST */
         .toast { position: fixed; bottom: 28px; right: 28px; background: var(--primary); color: #1a1b26; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 999; box-shadow: 0 8px 24px rgba(0,0,0,.3); animation: slideUp .25s ease; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
@@ -177,7 +199,7 @@ async function decrypt(secret, b64) {
 let token = sessionStorage.getItem('gh_crm_token') || '';
 let username = '';
 let currentTab = 'professional';
-let contacts = { personal:[], professional:[], notesDiary:[] };
+let contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
 
 // Filtering/Sorting State
 let searchQuery = '';
@@ -309,7 +331,8 @@ async function loadFromGist() {
     contacts = {
         personal:     Array.isArray(parsed.personal)     ? parsed.personal     : [],
         professional: Array.isArray(parsed.professional) ? parsed.professional : [],
-        notesDiary:   Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : []
+        notesDiary:   Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : [],
+        todos:        Array.isArray(parsed.todos)        ? parsed.todos        : []
     };
     migrateNotes();
     return true;
@@ -421,6 +444,109 @@ function genId() { return Date.now().toString(36) + Math.random().toString(36).s
 function esc(s)  { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function overdueCount(tab) { return (contacts[tab] || []).filter(c => c.nextContact && getStatus(c.nextContact).diff < 0).length; }
 
+// ── TO DO ─────────────────────────────────────────────────────────────────────
+function renderTodosGrid() {
+    const list = [...(contacts.todos || [])].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'));
+    if (!list.length) return `<div class="todo-empty"><div class="icon">✅</div><p>No cards yet — click <strong>+ Add Card</strong> to get started.</p></div>`;
+    return `<div class="todo-grid">` + list.map(card => {
+        const items = card.items || [];
+        return `<div class="todo-card" data-id="${card.id}">
+            <button class="todo-card-del" data-del="${card.id}" title="Delete card">&times;</button>
+            <div class="todo-card-date">${fmtDate(card.date)}</div>
+            ${card.title ? `<div class="todo-card-title">${esc(card.title)}</div>` : ''}
+            ${items.length ? `<hr class="todo-divider">` : ''}
+            <div class="todo-items-list" data-card="${card.id}">
+                ${items.map((item, idx) => `
+                <div class="todo-item">
+                    <input type="checkbox" data-card="${card.id}" data-idx="${idx}" ${item.done ? 'checked' : ''}>
+                    <span class="todo-item-text${item.done?' done':''}">${esc(item.text)}</span>
+                </div>`).join('')}
+            </div>
+            <div class="todo-add-item">
+                <input type="text" placeholder="Add task…" data-card-input="${card.id}">
+                <button data-card-add="${card.id}">+</button>
+            </div>
+        </div>`;
+    }).join('') + `</div>`;
+}
+
+function attachTodoEvents() {
+    // Checkbox toggle
+    document.querySelectorAll('.todo-item input[type="checkbox"]').forEach(cb => {
+        cb.onchange = async () => {
+            const card = contacts.todos.find(c => c.id === cb.dataset.card);
+            if (card) { card.items[+cb.dataset.idx].done = cb.checked; await saveToGist(); refreshTable(); }
+        };
+    });
+    // Delete card
+    document.querySelectorAll('[data-del]').forEach(btn => {
+        btn.onclick = async () => {
+            if (!confirm('Delete this card?')) return;
+            contacts.todos = contacts.todos.filter(c => c.id !== btn.dataset.del);
+            await saveToGist(); refreshTable();
+        };
+    });
+    // Add item via button
+    document.querySelectorAll('[data-card-add]').forEach(btn => {
+        btn.onclick = async () => {
+            const inp = document.querySelector(`[data-card-input="${btn.dataset.cardAdd}"]`);
+            const txt = inp ? inp.value.trim() : '';
+            if (!txt) return;
+            const card = contacts.todos.find(c => c.id === btn.dataset.cardAdd);
+            if (card) { card.items.push({ text: txt, done: false }); await saveToGist(); refreshTable(); }
+        };
+    });
+    // Add item via Enter key
+    document.querySelectorAll('[data-card-input]').forEach(inp => {
+        inp.onkeydown = async (e) => {
+            if (e.key !== 'Enter') return;
+            const txt = inp.value.trim();
+            if (!txt) return;
+            const card = contacts.todos.find(c => c.id === inp.dataset.cardInput);
+            if (card) { card.items.push({ text: txt, done: false }); await saveToGist(); refreshTable(); }
+        };
+    });
+}
+
+function openTodoModal() {
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="mo-todo">
+        <div class="modal" style="max-width:440px">
+            <div class="modal-header">
+                <h3 class="modal-title">New To Do Card</h3>
+                <button class="modal-close" id="mtc">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Date <span style="color:var(--danger)">*</span></label>
+                <input type="date" id="td-date" class="form-control" value="${today()}">
+            </div>
+            <div class="form-group">
+                <label>Title <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                <input type="text" id="td-title" class="form-control" placeholder="e.g. Work tasks, Errands…">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" id="mtc2">Cancel</button>
+                <button class="btn btn-primary" id="mts" style="width:auto">Create Card</button>
+            </div>
+        </div>
+    </div>`);
+    const close = () => document.getElementById('mo-todo').remove();
+    document.getElementById('mtc').onclick = close;
+    document.getElementById('mtc2').onclick = close;
+    document.getElementById('mo-todo').onclick = e => { if (e.target.id === 'mo-todo') close(); };
+    document.getElementById('mts').onclick = async () => {
+        const date = document.getElementById('td-date').value;
+        const title = document.getElementById('td-title').value.trim();
+        if (!date) { alert('Please pick a date.'); return; }
+        contacts.todos.push({ id: genId(), date, title, items: [] });
+        await saveToGist();
+        close();
+        refreshTable();
+        toast('Card created. Add tasks directly on the card.');
+    };
+    document.getElementById('td-date').focus();
+}
+
 function downloadMarkdown() {
     let md = `# Personal CRM Export - ${today()}\n\n`;
     ['professional', 'personal'].forEach(tab => {
@@ -445,6 +571,18 @@ function downloadMarkdown() {
         });
     }
     
+    if (contacts.todos && contacts.todos.length > 0) {
+        md += `---\n\n## To Do List\n\n`;
+        const sortedTodos = [...contacts.todos].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'));
+        sortedTodos.forEach(card => {
+            md += `### ${fmtDate(card.date)}${card.title ? ' — ' + card.title : ''}\n`;
+            (card.items || []).forEach(item => {
+                md += `- [${item.done ? 'x' : ' '}] ${item.done ? '~~' + item.text + '~~' : item.text}\n`;
+            });
+            md += `\n`;
+        });
+    }
+
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -510,7 +648,7 @@ async function handleLogin(tok) {
             console.error('Data load exception:', err);
             throw new Error('DECRYPT_FAIL');
         }
-        if (!loaded) contacts = { personal:[], professional:[], notesDiary:[] };
+        if (!loaded) contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
         renderApp();
     } catch (e) {
         token = '';
@@ -548,7 +686,7 @@ function handleLogout(msg = '') {
     };
     scramble(contacts);
     
-    contacts = { personal:[], professional:[], notesDiary:[] };
+    contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
     sessionStorage.removeItem('gh_crm_token');
     clearTimeout(logoutTimer);
     clearTimeout(logoutWarningTimer);
@@ -597,12 +735,13 @@ function renderApp() {
         <button class="tab-btn ${currentTab==='professional'?'active':''}" data-tab="professional">Professional${bo?`<span class="tab-badge">${bo}</span>`:''}</button>
         <button class="tab-btn ${currentTab==='personal'?'active':''}" data-tab="personal">Personal${po?`<span class="tab-badge">${po}</span>`:''}</button>
         <button class="tab-btn ${currentTab==='notes'?'active':''}" data-tab="notes">Notes</button>
+        <button class="tab-btn ${currentTab==='todos'?'active':''}" data-tab="todos">To Do</button>
     </nav>
     <main class="main-content">
         <div class="section-header">
-            <h2 class="section-title">${currentTab==='notes'?'Notes Diary':(currentTab==='personal'?'Personal':'Professional')+' Contacts'}</h2>
+            <h2 class="section-title">${currentTab==='notes'?'Notes Diary':currentTab==='todos'?'To Do List':(currentTab==='personal'?'Personal':'Professional')+' Contacts'}</h2>
             <div style="display:flex; gap:10px;">
-                <button class="btn-add" id="add-btn">${currentTab==='notes'?'+ Add Entry':'+ Add Contact'}</button>
+                <button class="btn-add" id="add-btn">${currentTab==='notes'?'+ Add Entry':currentTab==='todos'?'+ Add Card':'+ Add Contact'}</button>
             </div>
         </div>
         
@@ -632,15 +771,22 @@ function renderApp() {
             </div>
         </div>` : ''}
 
-        <div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : renderTable()}</div></div>
+        ${currentTab==='todos'
+            ? `<div id="tbl">${renderTodosGrid()}</div>`
+            : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : renderTable()}</div></div>`
+        }
     </main>`;
 
     document.getElementById('logout-btn').onclick = () => handleLogout();
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; renderApp(); });
-    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : openModal(null);
+    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     
-    if (currentTab !== 'notes') {
+    if (currentTab === 'todos') {
+        attachTodoEvents();
+    } else if (currentTab === 'notes') {
+        attachNotesTableEvents();
+    } else {
         const sIn = document.getElementById('search-in');
         if (sIn) sIn.oninput = () => { searchQuery = sIn.value; refreshTable(); };
         const instF = document.getElementById('inst-filter');
@@ -648,14 +794,20 @@ function renderApp() {
         const regF = document.getElementById('region-filter');
         if (regF) regF.onchange = (e) => { selectedRegion = e.target.value; refreshTable(); };
         attachTableEvents();
-    } else {
-        attachNotesTableEvents();
     }
 }
 
 function refreshTable() {
-    document.getElementById('tbl').innerHTML = currentTab === 'notes' ? renderNotesTable() : renderTable();
-    currentTab === 'notes' ? attachNotesTableEvents() : attachTableEvents();
+    if (currentTab === 'todos') {
+        document.getElementById('tbl').innerHTML = renderTodosGrid();
+        attachTodoEvents();
+    } else if (currentTab === 'notes') {
+        document.getElementById('tbl').innerHTML = renderNotesTable();
+        attachNotesTableEvents();
+    } else {
+        document.getElementById('tbl').innerHTML = renderTable();
+        attachTableEvents();
+    }
 }
 
 function renderNotesTable() {
