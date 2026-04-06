@@ -205,6 +205,9 @@ let contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
 let searchQuery = '';
 let selectedInstitution = 'All';
 let selectedRegion = 'All';
+let todoFilterDay = 'All';
+let todoFilterMonth = 'All';
+let todoFilterYear = 'All';
 let sortConfig = { key: 'nextContact', direction: 'asc' };
 let logoutTimer;
 let logoutWarningTimer;
@@ -446,7 +449,13 @@ function overdueCount(tab) { return (contacts[tab] || []).filter(c => c.nextCont
 
 // ── TO DO ─────────────────────────────────────────────────────────────────────
 function renderTodosGrid() {
-    const list = [...(contacts.todos || [])].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'));
+    const list = [...(contacts.todos || [])].filter(c => {
+        const d = new Date(c.date+'T00:00:00');
+        if (todoFilterDay   !== 'All' && String(d.getDate()).padStart(2,'0')    !== todoFilterDay)   return false;
+        if (todoFilterMonth !== 'All' && String(d.getMonth()+1).padStart(2,'0') !== todoFilterMonth) return false;
+        if (todoFilterYear  !== 'All' && String(d.getFullYear())                !== todoFilterYear)  return false;
+        return true;
+    }).sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'));
     if (!list.length) return `<div class="todo-empty"><div class="icon">✅</div><p>No cards yet — click <strong>+ Add Card</strong> to get started.</p></div>`;
     return `<div class="todo-grid">` + list.map(card => {
         const items = card.items || [];
@@ -542,7 +551,7 @@ function openTodoModal() {
             </div>
             <div class="form-group">
                 <label>Title <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-                <input type="text" id="td-title" class="form-control" placeholder="e.g. Work tasks, Errands…">
+                <input type="text" id="td-title" class="form-control" value="${fmtDate(today())}" placeholder="e.g. Work tasks, Errands…">
             </div>
             <div class="modal-footer">
                 <button class="btn btn-cancel" id="mtc2">Cancel</button>
@@ -765,7 +774,7 @@ function renderApp() {
             </div>
         </div>
         
-        ${currentTab !== 'notes' ? `
+        ${(currentTab === 'personal' || currentTab === 'professional') ? `
         <div class="filter-bar">
             <div class="filter-group">
                 <span class="filter-label">Search</span>
@@ -790,6 +799,33 @@ function renderApp() {
                 </select>
             </div>
         </div>` : ''}
+        ${currentTab === 'todos' ? (() => {
+            const dates = (contacts.todos || []).map(c => new Date(c.date+'T00:00:00'));
+            const days   = ['All', ...new Set(dates.map(d => String(d.getDate()).padStart(2,'0')))].sort((a,b) => a==='All'?-1:+a-+b);
+            const months = ['All', ...new Set(dates.map(d => String(d.getMonth()+1).padStart(2,'0')))].sort((a,b) => a==='All'?-1:+a-+b);
+            const years  = ['All', ...new Set(dates.map(d => String(d.getFullYear())))].sort((a,b) => a==='All'?-1:+a-+b);
+            const MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `<div class="filter-bar">
+                <div class="filter-group">
+                    <span class="filter-label">Day</span>
+                    <select id="todo-day-filter" class="select-custom">
+                        ${days.map(d => `<option value="${d}" ${todoFilterDay===d?'selected':''}>${d==='All'?'All':d}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <span class="filter-label">Month</span>
+                    <select id="todo-month-filter" class="select-custom">
+                        ${months.map(m => `<option value="${m}" ${todoFilterMonth===m?'selected':''}>${m==='All'?'All':MONTHS[+m]}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <span class="filter-label">Year</span>
+                    <select id="todo-year-filter" class="select-custom">
+                        ${years.map(y => `<option value="${y}" ${todoFilterYear===y?'selected':''}>${y}</option>`).join('')}
+                    </select>
+                </div>
+            </div>`;
+        })() : ''}
 
         ${currentTab==='todos'
             ? `<div id="tbl">${renderTodosGrid()}</div>`
@@ -798,12 +834,18 @@ function renderApp() {
     </main>`;
 
     document.getElementById('logout-btn').onclick = () => handleLogout();
-    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; renderApp(); });
+    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
     document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     
     if (currentTab === 'todos') {
         attachTodoEvents();
+        const df = document.getElementById('todo-day-filter');
+        const mf = document.getElementById('todo-month-filter');
+        const yf = document.getElementById('todo-year-filter');
+        if (df) df.onchange = e => { todoFilterDay   = e.target.value; refreshTable(); };
+        if (mf) mf.onchange = e => { todoFilterMonth = e.target.value; refreshTable(); };
+        if (yf) yf.onchange = e => { todoFilterYear  = e.target.value; refreshTable(); };
     } else if (currentTab === 'notes') {
         attachNotesTableEvents();
     } else {
