@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.github.com; img-src 'self' data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://gist.githubusercontent.com; img-src 'self' data:;">
     <title>Personal CRM</title>
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png">
     <link rel="shortcut icon" href="./favicon.png">
@@ -347,6 +347,7 @@ async function loadFromGist() {
 
 
 let _saveTimer = null;
+let _retryTimer = null;
 async function saveToGist() {
     if (!token) return;
     // Debounce rapid saves to avoid race conditions
@@ -409,9 +410,9 @@ async function saveToGist() {
                 setSyncBadge('err');
                 lastSyncThrewError = true;
                 // Auto-retry in background to ensure data is synced when connection restores
-                if (!window.retryTimer) {
-                    window.retryTimer = setTimeout(() => {
-                        window.retryTimer = null;
+                if (!_retryTimer) {
+                    _retryTimer = setTimeout(() => {
+                        _retryTimer = null;
                         saveToGist();
                     }, 5000);
                 }
@@ -463,22 +464,23 @@ function renderTodosGrid() {
     if (!list.length) return `<div class="todo-empty"><div class="icon">✅</div><p>No cards yet — click <strong>+ Add Card</strong> to get started.</p></div>`;
     return `<div class="todo-grid">` + list.map(card => {
         const items = card.items || [];
-        return `<div class="todo-card" data-id="${card.id}">
-            <button class="todo-card-del" data-del="${card.id}" title="Delete card">&times;</button>
+        const cid = esc(card.id);
+        return `<div class="todo-card" data-id="${cid}">
+            <button class="todo-card-del" data-del="${cid}" title="Delete card">&times;</button>
             <div class="todo-card-date">${fmtDate(card.date)}</div>
             ${card.title ? `<div class="todo-card-title">${esc(card.title)}</div>` : ''}
             ${items.length ? `<hr class="todo-divider">` : ''}
-            <div class="todo-items-list" data-card="${card.id}">
+            <div class="todo-items-list" data-card="${cid}">
                 ${items.map((item, idx) => `
                 <div class="todo-item">
-                    <input type="checkbox" data-card="${card.id}" data-idx="${idx}" ${item.done ? 'checked' : ''}>
-                    <span class="todo-item-text${item.done?' done':''}" data-card="${card.id}" data-idx="${idx}">${esc(item.text)}</span>
-                    <button class="todo-item-del" data-card="${card.id}" data-idx="${idx}" title="Delete task">×</button>
+                    <input type="checkbox" data-card="${cid}" data-idx="${idx}" ${item.done ? 'checked' : ''}>
+                    <span class="todo-item-text${item.done?' done':''}" data-card="${cid}" data-idx="${idx}">${esc(item.text)}</span>
+                    <button class="todo-item-del" data-card="${cid}" data-idx="${idx}" title="Delete task">×</button>
                 </div>`).join('')}
             </div>
             <div class="todo-add-item">
-                <input type="text" placeholder="Add task…" data-card-input="${card.id}">
-                <button data-card-add="${card.id}">+</button>
+                <input type="text" placeholder="Add task…" data-card-input="${cid}">
+                <button data-card-add="${cid}">+</button>
             </div>
         </div>`;
     }).join('') + `</div>`;
@@ -520,6 +522,7 @@ function wireCardItemEvents(list, card) {
 function wireTextEdit(span, card) {
     span.onclick = () => {
         const idx = +span.dataset.idx;
+        if (!card.items[idx]) return; // guard against stale index after deletion
         const originalText = card.items[idx].text;
         const done = card.items[idx].done;
         const input = document.createElement('input');
@@ -718,10 +721,9 @@ async function handleLogin(tok) {
         sessionStorage.setItem('gh_crm_token', token);
         // Try loading existing data; if none, start fresh
         let loaded = false;
-        try { 
-            loaded = await loadFromGist(); 
-        } catch (err) {
-            console.error('Data load exception:', err);
+        try {
+            loaded = await loadFromGist();
+        } catch {
             throw new Error('DECRYPT_FAIL');
         }
         if (!loaded) contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
