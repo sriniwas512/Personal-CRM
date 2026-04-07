@@ -1171,8 +1171,16 @@ function openModal(editId) {
     document.getElementById('add-note-btn').onclick = () => {
         const txt = document.getElementById('new-note-text').value.trim();
         if (txt) {
-            renderedNotes.unshift({ date: today(), text: txt });
+            const noteDate = today();
+            renderedNotes.unshift({ date: noteDate, text: txt });
             document.getElementById('new-note-text').value = '';
+            // Update Last Contact and push Next Contact by 28 days
+            const lastInp = document.getElementById('f-last');
+            const nextInp = document.getElementById('f-next');
+            if (!lastInp.value || noteDate >= lastInp.value) {
+                lastInp.value = noteDate;
+                nextInp.value = addDays(noteDate, 28);
+            }
             updateNotesUI();
         }
     };
