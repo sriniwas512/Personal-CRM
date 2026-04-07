@@ -802,7 +802,7 @@ function renderApp() {
                 <span class="filter-label">Institution</span>
                 <select id="inst-filter" class="select-custom">
                     ${(() => {
-                        const insts = ['All', ...new Set(contacts[currentTab].map(c => c.institution).filter(Boolean))];
+                        const insts = ['All', ...[...new Set(contacts[currentTab].map(c => c.institution).filter(Boolean))].sort((a,b) => a.localeCompare(b))];
                         return insts.map(i => `<option value="${esc(i)}" ${selectedInstitution===i?'selected':''}>${esc(i)}</option>`).join('');
                     })()}
                 </select>
@@ -811,7 +811,7 @@ function renderApp() {
                 <span class="filter-label">Region</span>
                 <select id="region-filter" class="select-custom">
                     ${(() => {
-                        const regs = ['All', ...new Set(contacts[currentTab].map(c => c.region).filter(Boolean))];
+                        const regs = ['All', ...[...new Set(contacts[currentTab].map(c => c.region).filter(Boolean))].sort((a,b) => a.localeCompare(b))];
                         return regs.map(r => `<option value="${esc(r)}" ${selectedRegion===r?'selected':''}>${esc(r)}</option>`).join('');
                     })()}
                 </select>
