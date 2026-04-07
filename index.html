@@ -34,7 +34,7 @@
         .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-muted); }
         .form-control { width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; outline: none; transition: all .2s; background: var(--input-bg); color: var(--text); }
         .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.2); }
-        textarea.form-control { resize: vertical; min-height: 80px; }
+        textarea.form-control { resize: none; min-height: 80px; overflow: hidden; }
         .error-msg { color: var(--danger); font-size: 13px; margin-top: 6px; }
 
         /* BUTTONS */
@@ -114,7 +114,7 @@
         .note-date:hover { background: rgba(122, 162, 247, 0.1); border-color: var(--primary); }
         .note-text { font-size: 13px; color: var(--text); white-space: pre-wrap; cursor: pointer; padding: 6px; border-radius: 4px; transition: background 0.2s; border: 1px solid transparent; }
         .note-text:hover { background: rgba(255,255,255,0.05); border-color: var(--border); }
-        .note-edit-area { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 5px; font-family: inherit; font-size: 13px; outline: none; margin-top: 5px; }
+        .note-edit-area { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 5px; font-family: inherit; font-size: 13px; outline: none; margin-top: 5px; resize: none; overflow: hidden; box-sizing: border-box; }
         .note-date-edit { background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 2px; font-size: 11px; outline: none; }
         .note-delete { position: absolute; top: 8px; right: 8px; color: var(--text-muted); cursor: pointer; font-size: 16px; opacity: 0.5; }
         .note-delete:hover { color: var(--danger); opacity: 1; }
@@ -421,6 +421,22 @@ function sortContacts(list) {
     });
 }
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+// Auto-expand textarea height and enforce plain-text paste
+function wireTextarea(el) {
+    if (!el) return;
+    const grow = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+    el.addEventListener('input', grow);
+    grow();
+    el.addEventListener('paste', e => {
+        e.preventDefault();
+        const plain = (e.clipboardData || window.clipboardData).getData('text/plain');
+        const sel = el.selectionStart;
+        el.value = el.value.slice(0, sel) + plain + el.value.slice(el.selectionEnd);
+        el.selectionStart = el.selectionEnd = sel + plain.length;
+        grow();
+    });
+}
 function esc(s)  { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function overdueCount(tab) { return (contacts[tab] || []).filter(c => c.nextContact && getStatus(c.nextContact).diff < 0).length; }
 
@@ -924,6 +940,7 @@ function openNoteModal(editId) {
         </div>
     </div>`);
 
+    wireTextarea(document.getElementById('n-text'));
     const close = () => { document.getElementById('mo-note').remove(); };
     document.getElementById('mc-note').onclick = close;
     document.getElementById('mc-note2').onclick = close;
@@ -1086,6 +1103,7 @@ function openModal(editId) {
         </div>
     </div>`);
 
+    wireTextarea(document.getElementById('new-note-text'));
     const close = () => { document.getElementById('mo').remove(); };
     document.getElementById('mc').onclick = close;
     document.getElementById('mc2').onclick = close;
@@ -1129,6 +1147,7 @@ function openModal(editId) {
                 area.className = 'note-edit-area';
                 area.value = currentTxt;
                 el.replaceWith(area);
+                wireTextarea(area);
                 area.focus();
                 area.onblur = () => {
                     renderedNotes[idx].text = area.value.trim() || currentTxt;
