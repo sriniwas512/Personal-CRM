@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://gist.githubusercontent.com; img-src 'self' data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://gist.githubusercontent.com; img-src 'self' data:; font-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none';">
     <title>Personal CRM</title>
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png">
     <link rel="shortcut icon" href="./favicon.png">
@@ -255,7 +255,10 @@ async function gh(path, opts = {}) {
                 ...(opts.headers || {})
             }
         });
-        if (!r.ok) throw new Error(r.status);
+        if (!r.ok) {
+            if (r.status === 403) throw new Error('RATE_LIMIT');
+            throw new Error(r.status);
+        }
         return r.json();
     } finally {
         clearTimeout(timeout);
@@ -306,9 +309,14 @@ async function loadFromGist() {
         const g    = await gh('/gists/' + id);
         const file = g.files[GIST_FILE];
         if (file) {
-            remoteRaw = file.truncated
-                ? await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text()
-                : file.content;
+            if (file.truncated) {
+                if (typeof file.raw_url !== 'string' || !file.raw_url.startsWith('https://gist.githubusercontent.com/')) {
+                    throw new Error('Unexpected raw_url origin — possible API tampering');
+                }
+                remoteRaw = await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text();
+            } else {
+                remoteRaw = file.content;
+            }
             lastSyncDate = g.updated_at;
         }
     }
@@ -317,14 +325,50 @@ async function loadFromGist() {
 
     if (!rawToUse) return false;
     
-    const parsed = JSON.parse(await decrypt(token, rawToUse.trim()));
-    if (!parsed || typeof parsed !== 'object') throw new Error('Invalid data format');
-    
+    let parsed;
+    try {
+        parsed = JSON.parse(await decrypt(token, rawToUse.trim()));
+    } catch {
+        throw new Error('DECRYPT_FAIL');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid data format');
+    // Prevent prototype pollution — reject payloads with dangerous keys
+    const DANGEROUS = new Set(['__proto__', 'constructor', 'prototype']);
+    const hasDangerousKey = (obj) => {
+        if (!obj || typeof obj !== 'object') return false;
+        if (Object.keys(obj).some(k => DANGEROUS.has(k))) return true;
+        return Object.values(obj).some(v => typeof v === 'object' && hasDangerousKey(v));
+    };
+    if (hasDangerousKey(parsed)) throw new Error('Invalid data format');
+
+    const str  = (v, fallback = '') => (typeof v === 'string' ? v : fallback);
+    const bool = (v) => v === true;
+    const sanitizeContact = (c) => ({
+        id:          str(c.id) || genId(),
+        name:        str(c.name),
+        institution: str(c.institution),
+        region:      str(c.region),
+        lastContact: str(c.lastContact),
+        nextContact: str(c.nextContact),
+        notes:       Array.isArray(c.notes)
+            ? c.notes.map(n => ({ date: str(n.date), text: str(n.text) }))
+            : []
+    });
+    const sanitizeNote = (n) => ({ id: str(n.id) || genId(), date: str(n.date), text: str(n.text) });
+    const sanitizeTodo = (t) => ({
+        id:    str(t.id) || genId(),
+        date:  str(t.date),
+        title: str(t.title),
+        items: Array.isArray(t.items)
+            ? t.items.map(i => ({ text: str(i.text), done: bool(i.done) }))
+            : []
+    });
+
     contacts = {
-        personal:     Array.isArray(parsed.personal)     ? parsed.personal     : [],
-        professional: Array.isArray(parsed.professional) ? parsed.professional : [],
-        notesDiary:   Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : [],
-        todos:        Array.isArray(parsed.todos)        ? parsed.todos        : []
+        personal:     (Array.isArray(parsed.personal)     ? parsed.personal     : []).map(sanitizeContact),
+        professional: (Array.isArray(parsed.professional) ? parsed.professional : []).map(sanitizeContact),
+        notesDiary:   (Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : []).map(sanitizeNote),
+        todos:        (Array.isArray(parsed.todos)        ? parsed.todos        : []).map(sanitizeTodo)
     };
     migrateNotes();
     return true;
@@ -680,7 +724,7 @@ function renderLogin(err='') {
             <div class="login-logo"><span>🔐</span><h1>Personal CRM</h1><p>Your private relationship manager</p><p class="author-tag" style="margin-top:10px; font-size:12px;">Created by Sriniwas Ghate</p></div>
             <div class="login-hint">
                 Paste your <strong>GitHub Personal Access Token</strong> to sign in.<br>
-                Don't have one? <a href="https://github.com/settings/tokens/new?scopes=gist&description=Personal+CRM" target="_blank">Create one here</a>
+                Don't have one? <a href="https://github.com/settings/tokens/new?scopes=gist&description=Personal+CRM" target="_blank" rel="noopener noreferrer">Create one here</a>
                 — enable only the <code>gist</code> scope.
             </div>
             <div class="form-group">
@@ -707,12 +751,7 @@ async function handleLogin(tok) {
         const user = await gh('/user');
         username = user.login;
         // Try loading existing data
-        let loaded = false;
-        try {
-            loaded = await loadFromGist();
-        } catch {
-            throw new Error('DECRYPT_FAIL');
-        }
+        const loaded = await loadFromGist();
         if (!loaded) {
             // No CRM gist found for this account — confirm before starting blank
             // (protects against accidentally logging in with a different account's PAT)
@@ -736,8 +775,9 @@ async function handleLogin(tok) {
         username = '';
         gistId = null;
         let msg = 'Could not connect to GitHub. Check your token and network.';
-        if (e.name === 'AbortError') msg = 'Request timed out.';
-        else if (e.message === '401') msg = 'Invalid token. Please check and try again.';
+        if (e.name === 'AbortError')       msg = 'Request timed out. Check your network and try again.';
+        else if (e.message === '401')       msg = 'Invalid token. Please check and try again.';
+        else if (e.message === 'RATE_LIMIT') msg = 'GitHub API rate limit reached. Please wait a minute and try again.';
         else if (e.message === 'DECRYPT_FAIL') msg = 'Your data exists but could not be decrypted. This usually means you are using a different token than the one you originally signed in with. Your data is safe — please use your original token.';
         renderLogin(msg);
     }
@@ -747,27 +787,7 @@ async function handleLogin(tok) {
 function handleLogout(msg = '') {
     token = '';
     username = '';
-    
-    // Best-effort memory scrub (addresses cold-boot concerns despite JS string immutability)
-    const scramble = (obj) => {
-        if (!obj) return;
-        if (Array.isArray(obj)) {
-            for (let i = 0; i < obj.length; i++) scramble(obj[i]);
-            obj.length = 0; // truncate array
-        } else if (typeof obj === 'object') {
-            for (let k in obj) {
-                if (typeof obj[k] === 'string') {
-                    const r = new Uint8Array(obj[k].length);
-                    crypto.getRandomValues(r);
-                    obj[k] = Array.from(r).map(n => String.fromCharCode((n % 26) + 97)).join('');
-                } else if (typeof obj[k] === 'object') {
-                    scramble(obj[k]);
-                }
-            }
-        }
-    };
-    scramble(contacts);
-    
+    // Clear all references — JS strings are immutable so GC handles actual memory
     contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
     gistId = null;
     clearTimeout(logoutTimer);
