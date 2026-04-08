@@ -706,21 +706,39 @@ async function handleLogin(tok) {
         // Verify token via GitHub — this IS the authentication
         const user = await gh('/user');
         username = user.login;
-        // Try loading existing data; if none, start fresh
+        // Try loading existing data
         let loaded = false;
         try {
             loaded = await loadFromGist();
         } catch {
             throw new Error('DECRYPT_FAIL');
         }
-        if (!loaded) contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
+        if (!loaded) {
+            // No CRM gist found for this account — confirm before starting blank
+            // (protects against accidentally logging in with a different account's PAT)
+            const proceed = confirm(
+                `No existing CRM data found for @${username}.\n\n` +
+                `If you expected your data to be here, you may be using a different token than the one you originally set up with.\n\n` +
+                `Start fresh with an empty CRM for @${username}?`
+            );
+            if (!proceed) {
+                token = '';
+                username = '';
+                gistId = null;
+                renderLogin('Login cancelled. Please try your original token.');
+                return;
+            }
+            contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
+        }
         renderApp();
     } catch (e) {
         token = '';
+        username = '';
+        gistId = null;
         let msg = 'Could not connect to GitHub. Check your token and network.';
         if (e.name === 'AbortError') msg = 'Request timed out.';
         else if (e.message === '401') msg = 'Invalid token. Please check and try again.';
-        else if (e.message === 'DECRYPT_FAIL') msg = 'Incorrect token or corrupted data. Decryption failed.';
+        else if (e.message === 'DECRYPT_FAIL') msg = 'Your data exists but could not be decrypted. This usually means you are using a different token than the one you originally signed in with. Your data is safe — please use your original token.';
         renderLogin(msg);
     }
     resetLogoutTimer();
