@@ -224,11 +224,11 @@ function resetLogoutTimer() {
     if (token) {
         logoutWarningTimer = setTimeout(() => {
             toast('⏳ Your session will expire in 60 seconds. Move your mouse or press a key to stay logged in.', 10000);
-        }, 540000); // 9 minutes
+        }, 3540000); // 59 minutes
         
         logoutTimer = setTimeout(() => {
             handleLogout('You have been logged out due to inactivity.');
-        }, 600000); // 10 minutes
+        }, 3600000); // 60 minutes
     }
 }
 
