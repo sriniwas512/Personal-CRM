@@ -106,6 +106,12 @@
         .modal-close { background: none; border: none; font-size: 26px; cursor: pointer; color: var(--text-muted); line-height: 1; }
         .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 26px; }
         .modal-footer .btn { width: auto; }
+        .import-summary { display: grid; gap: 6px; font-size: 14px; margin-bottom: 14px; }
+        .import-summary .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; background: var(--input-bg); border-radius: 8px; }
+        .import-summary .n { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+        .import-summary .n b { color: var(--text); }
+        .import-names { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
+        .import-warn { font-size: 13px; color: var(--text-muted); border-left: 3px solid var(--primary); padding: 4px 0 4px 12px; }
 
         /* NOTES LOG */
         .notes-log { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
@@ -301,36 +307,8 @@ function migrateNotes() {
     });
 }
 
-async function loadFromGist() {
-    const id = await findGist();
-    let remoteRaw = null;
-
-    if (id) {
-        const g    = await gh('/gists/' + id);
-        const file = g.files[GIST_FILE];
-        if (file) {
-            if (file.truncated) {
-                if (typeof file.raw_url !== 'string' || !file.raw_url.startsWith('https://gist.githubusercontent.com/')) {
-                    throw new Error('Unexpected raw_url origin — possible API tampering');
-                }
-                remoteRaw = await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text();
-            } else {
-                remoteRaw = file.content;
-            }
-            lastSyncDate = g.updated_at;
-        }
-    }
-    
-    let rawToUse = remoteRaw;
-
-    if (!rawToUse) return false;
-    
-    let parsed;
-    try {
-        parsed = JSON.parse(await decrypt(token, rawToUse.trim()));
-    } catch {
-        throw new Error('DECRYPT_FAIL');
-    }
+// Validates and normalises a decrypted (or imported) payload. Throws on anything unexpected.
+function sanitizeData(parsed) {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid data format');
     // Prevent prototype pollution — reject payloads with dangerous keys
     const DANGEROUS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -364,12 +342,45 @@ async function loadFromGist() {
             : []
     });
 
-    contacts = {
+    return {
         personal:     (Array.isArray(parsed.personal)     ? parsed.personal     : []).map(sanitizeContact),
         professional: (Array.isArray(parsed.professional) ? parsed.professional : []).map(sanitizeContact),
         notesDiary:   (Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : []).map(sanitizeNote),
         todos:        (Array.isArray(parsed.todos)        ? parsed.todos        : []).map(sanitizeTodo)
     };
+}
+
+async function loadFromGist() {
+    const id = await findGist();
+    let remoteRaw = null;
+
+    if (id) {
+        const g    = await gh('/gists/' + id);
+        const file = g.files[GIST_FILE];
+        if (file) {
+            if (file.truncated) {
+                if (typeof file.raw_url !== 'string' || !file.raw_url.startsWith('https://gist.githubusercontent.com/')) {
+                    throw new Error('Unexpected raw_url origin — possible API tampering');
+                }
+                remoteRaw = await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text();
+            } else {
+                remoteRaw = file.content;
+            }
+            lastSyncDate = g.updated_at;
+        }
+    }
+    
+    let rawToUse = remoteRaw;
+
+    if (!rawToUse) return false;
+    
+    let parsed;
+    try {
+        parsed = JSON.parse(await decrypt(token, rawToUse.trim()));
+    } catch {
+        throw new Error('DECRYPT_FAIL');
+    }
+    contacts = sanitizeData(parsed);
     migrateNotes();
     return true;
 }
@@ -703,6 +714,99 @@ function downloadMarkdown() {
     URL.revokeObjectURL(url);
 }
 
+// ── CLAUDE BRIDGE ─────────────────────────────────────────────────────────────
+// Export: a plain JSON copy of your data that Claude can read and edit.
+// Import: load an edited copy back. It's validated with the same rules as your
+// Gist data, you see what will change, and only then is it encrypted and saved.
+const BRIDGE_FORMAT = 'personal-crm';
+const BRIDGE_VERSION = 1;
+
+function exportForClaude() {
+    const payload = { format: BRIDGE_FORMAT, version: BRIDGE_VERSION, exportedAt: new Date().toISOString(), data: contacts };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crm_for_claude_${today()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Exported. This file is not encrypted, so delete it once Claude is done.', 5000);
+}
+
+function diffList(before, after, label) {
+    const key = x => x.id;
+    const b = new Map(before.map(x => [key(x), x])), a = new Map(after.map(x => [key(x), x]));
+    const added = after.filter(x => !b.has(key(x)));
+    const removed = before.filter(x => !a.has(key(x)));
+    const changed = after.filter(x => b.has(key(x)) && JSON.stringify(b.get(key(x))) !== JSON.stringify(x));
+    return { label, added, removed, changed };
+}
+
+async function importFromClaude(file) {
+    if (file.size > 50 * 1024 * 1024) { toast('That file is too large to be a CRM export.'); return; }
+    let next;
+    try {
+        const raw = JSON.parse(await file.text());
+        // Accept either the export wrapper or a bare data object
+        const data = (raw && raw.format === BRIDGE_FORMAT) ? raw.data : raw;
+        if (raw && raw.format === BRIDGE_FORMAT && raw.version > BRIDGE_VERSION) throw new Error('newer');
+        next = sanitizeData(data);
+        ['personal', 'professional'].forEach(tab => next[tab].forEach(c => {
+            if (!Array.isArray(c.notes)) c.notes = [];
+        }));
+    } catch (e) {
+        toast(e && e.message === 'newer'
+            ? 'This file was made by a newer version of the app. Update the app and try again.'
+            : 'That file couldn\'t be read. Choose the .json file from "Export for Claude", or one Claude gave you.', 6000);
+        return;
+    }
+
+    const name = x => x.name || x.title || fmtDate(x.date);
+    const diffs = [
+        diffList(contacts.professional, next.professional, 'Professional contacts'),
+        diffList(contacts.personal, next.personal, 'Personal contacts'),
+        diffList(contacts.notesDiary, next.notesDiary, 'Diary entries'),
+        diffList(contacts.todos, next.todos, 'To do cards'),
+    ];
+    const total = diffs.reduce((n, d) => n + d.added.length + d.removed.length + d.changed.length, 0);
+    if (!total) { toast('No changes. That file matches what you already have.'); return; }
+
+    const names = (arr, verb) => arr.length ? `<div><b>${verb}:</b> ${arr.slice(0, 12).map(x => esc(name(x))).join(', ')}${arr.length > 12 ? ` and ${arr.length - 12} more` : ''}</div>` : '';
+    const contactDiffs = diffs.slice(0, 2);
+    const removedCount = diffs.reduce((n, d) => n + d.removed.length, 0);
+
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="mo-import">
+        <div class="modal" style="max-width:520px">
+            <div class="modal-header"><h3 class="modal-title">Import changes</h3><button class="modal-close" id="mi-x">&times;</button></div>
+            <div class="import-summary">
+                ${diffs.map(d => `<div class="row"><span>${d.label}</span><span class="n"><b>${d.added.length}</b> new · <b>${d.changed.length}</b> updated · <b>${d.removed.length}</b> removed</span></div>`).join('')}
+            </div>
+            <div class="import-names">
+                ${names(contactDiffs.flatMap(d => d.added), 'New')}
+                ${names(contactDiffs.flatMap(d => d.changed), 'Updated')}
+                ${names(contactDiffs.flatMap(d => d.removed), 'Removed')}
+            </div>
+            <p class="import-warn">This replaces your current data with the file's contents.${removedCount ? ` <b>${removedCount} item${removedCount === 1 ? '' : 's'} will be removed.</b>` : ''} Your previous version stays in the Gist's revision history.</p>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" id="mi-cancel">Cancel</button>
+                <button class="btn btn-primary" id="mi-ok" style="width:auto">Import and save</button>
+            </div>
+        </div>
+    </div>`);
+    const close = () => { const m = document.getElementById('mo-import'); if (m) m.remove(); };
+    document.getElementById('mi-x').onclick = close;
+    document.getElementById('mi-cancel').onclick = close;
+    document.getElementById('mi-ok').onclick = async () => {
+        contacts = next;
+        migrateNotes();
+        close();
+        renderApp();
+        await saveToGist();
+        toast(`Imported ${total} change${total === 1 ? '' : 's'}. Delete the .json file from your computer.`, 5000);
+    };
+}
+
 function toast(msg, ms=2800) {
     const t = document.createElement('div'); t.className='toast'; t.textContent=msg;
     document.body.appendChild(t); setTimeout(()=>t.remove(), ms);
@@ -813,6 +917,9 @@ function renderApp() {
         <div class="header-right">
             <span id="sync-badge" class="sync-badge sync-ok">✓ Synced</span>
             <button class="btn btn-sm btn-download" id="dl-btn">Download .md</button>
+            <button class="btn-sm" id="claude-export-btn" title="Download a file Claude can read and edit">Export for Claude</button>
+            <button class="btn-sm" id="claude-import-btn" title="Load a file Claude has updated">Import</button>
+            <input type="file" id="claude-import-file" accept=".json,application/json" hidden>
             <button class="btn-sm danger" id="logout-btn">Sign Out</button>
         </div>
     </header>
@@ -893,6 +1000,10 @@ function renderApp() {
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
     document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;
+    document.getElementById('claude-export-btn').onclick = exportForClaude;
+    const impFile = document.getElementById('claude-import-file');
+    document.getElementById('claude-import-btn').onclick = () => { impFile.value = ''; impFile.click(); };
+    impFile.onchange = () => { if (impFile.files[0]) importFromClaude(impFile.files[0]); };
     
     if (currentTab === 'todos') {
         attachTodoEvents();
