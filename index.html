@@ -112,6 +112,10 @@
         .import-summary .n b { color: var(--text); }
         .import-names { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
         .import-warn { font-size: 13px; color: var(--text-muted); border-left: 3px solid var(--primary); padding: 4px 0 4px 12px; }
+        .import-alert { font-size: 13px; color: var(--text); background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.45); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; line-height: 1.55; }
+        .import-alert b { color: var(--danger); }
+        .import-tick { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 12px; cursor: pointer; }
+        #mi-ok:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
         /* NOTES LOG */
         .notes-log { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
@@ -722,7 +726,8 @@ const BRIDGE_FORMAT = 'personal-crm';
 const BRIDGE_VERSION = 1;
 
 function exportForClaude() {
-    const payload = { format: BRIDGE_FORMAT, version: BRIDGE_VERSION, exportedAt: new Date().toISOString(), data: contacts };
+    // basedOn records which saved version this export came from, so an out-of-date file can be caught on import.
+    const payload = { format: BRIDGE_FORMAT, version: BRIDGE_VERSION, exportedAt: new Date().toISOString(), basedOn: lastSyncDate, data: contacts };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -744,60 +749,84 @@ function diffList(before, after, label) {
 
 async function importFromClaude(file) {
     if (file.size > 50 * 1024 * 1024) { toast('That file is too large to be a CRM export.'); return; }
-    let next;
-    try {
-        const raw = JSON.parse(await file.text());
-        // Accept either the export wrapper or a bare data object
-        const data = (raw && raw.format === BRIDGE_FORMAT) ? raw.data : raw;
-        if (raw && raw.format === BRIDGE_FORMAT && raw.version > BRIDGE_VERSION) throw new Error('newer');
-        next = sanitizeData(data);
-        ['personal', 'professional'].forEach(tab => next[tab].forEach(c => {
-            if (!Array.isArray(c.notes)) c.notes = [];
-        }));
-    } catch (e) {
-        toast(e && e.message === 'newer'
-            ? 'This file was made by a newer version of the app. Update the app and try again.'
-            : 'That file couldn\'t be read. Choose the .json file from "Export for Claude", or one Claude gave you.', 6000);
-        return;
+    const fail = msg => toast(msg, 7000);
+    let raw, next;
+    try { raw = JSON.parse(await file.text()); }
+    catch { fail('That file couldn\'t be read. Choose the .json file from "Export for Claude", or one Claude gave you.'); return; }
+
+    // Only accept files in the export format, with every section present.
+    // This stops an unrelated .json file from being read as an empty CRM.
+    const SECTIONS = ['professional', 'personal', 'notesDiary', 'todos'];
+    if (!raw || raw.format !== BRIDGE_FORMAT || !raw.data || typeof raw.data !== 'object'
+        || !SECTIONS.every(k => Array.isArray(raw.data[k]))) {
+        fail('That isn\'t a Personal CRM export. Choose the .json file from "Export for Claude", or one Claude gave you.'); return;
+    }
+    if (raw.version > BRIDGE_VERSION) { fail('This file was made by a newer version of the app. Update the app and try again.'); return; }
+    try { next = sanitizeData(raw.data); }
+    catch { fail('That file has data the app can\'t accept, so nothing was imported.'); return; }
+
+    // Every record needs a unique id, or changes can't be matched up reliably.
+    for (const k of SECTIONS) {
+        const ids = raw.data[k].map(x => x && x.id);
+        if (ids.some(id => typeof id !== 'string' || !id) || new Set(ids).size !== ids.length) {
+            fail('Some records in that file are missing an id or share one, so nothing was imported.'); return;
+        }
     }
 
+    const nowContacts = contacts.professional.length + contacts.personal.length;
+    const nextContacts = next.professional.length + next.personal.length;
+    if (nowContacts > 0 && nextContacts === 0) {
+        fail('That file has no contacts, so importing it would delete all of yours. Nothing was imported.'); return;
+    }
+
+    // Compare against a normalised copy of the current data so only real differences show.
+    const current = sanitizeData(JSON.parse(JSON.stringify(contacts)));
     const name = x => x.name || x.title || fmtDate(x.date);
     const diffs = [
-        diffList(contacts.professional, next.professional, 'Professional contacts'),
-        diffList(contacts.personal, next.personal, 'Personal contacts'),
-        diffList(contacts.notesDiary, next.notesDiary, 'Diary entries'),
-        diffList(contacts.todos, next.todos, 'To do cards'),
+        diffList(current.professional, next.professional, 'Professional contacts'),
+        diffList(current.personal, next.personal, 'Personal contacts'),
+        diffList(current.notesDiary, next.notesDiary, 'Diary entries'),
+        diffList(current.todos, next.todos, 'To do cards'),
     ];
     const total = diffs.reduce((n, d) => n + d.added.length + d.removed.length + d.changed.length, 0);
     if (!total) { toast('No changes. That file matches what you already have.'); return; }
 
+    const stale = (raw.basedOn ?? null) !== (lastSyncDate ?? null);
+    const removed = diffs.flatMap(d => d.removed.map(x => ({ x, label: d.label })));
+    const needsTick = stale || removed.length > 0;
     const names = (arr, verb) => arr.length ? `<div><b>${verb}:</b> ${arr.slice(0, 12).map(x => esc(name(x))).join(', ')}${arr.length > 12 ? ` and ${arr.length - 12} more` : ''}</div>` : '';
     const contactDiffs = diffs.slice(0, 2);
-    const removedCount = diffs.reduce((n, d) => n + d.removed.length, 0);
 
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="mo-import">
         <div class="modal" style="max-width:520px">
             <div class="modal-header"><h3 class="modal-title">Import changes</h3><button class="modal-close" id="mi-x">&times;</button></div>
+            ${stale ? `<p class="import-alert"><b>Your CRM has changed since this file was exported.</b> Importing it will undo those changes. To be safe, cancel, export again and ask Claude to redo the update on the new file.</p>` : ''}
             <div class="import-summary">
                 ${diffs.map(d => `<div class="row"><span>${d.label}</span><span class="n"><b>${d.added.length}</b> new · <b>${d.changed.length}</b> updated · <b>${d.removed.length}</b> removed</span></div>`).join('')}
             </div>
             <div class="import-names">
                 ${names(contactDiffs.flatMap(d => d.added), 'New')}
                 ${names(contactDiffs.flatMap(d => d.changed), 'Updated')}
-                ${names(contactDiffs.flatMap(d => d.removed), 'Removed')}
             </div>
-            <p class="import-warn">This replaces your current data with the file's contents.${removedCount ? ` <b>${removedCount} item${removedCount === 1 ? '' : 's'} will be removed.</b>` : ''} Your previous version stays in the Gist's revision history.</p>
+            ${removed.length ? `<p class="import-alert"><b>${removed.length} item${removed.length === 1 ? '' : 's'} will be deleted:</b> ${removed.slice(0, 15).map(r => esc(name(r.x))).join(', ')}${removed.length > 15 ? ` and ${removed.length - 15} more` : ''}</p>` : ''}
+            ${needsTick ? `<label class="import-tick"><input type="checkbox" id="mi-tick"> I've checked this and want to import anyway</label>` : ''}
+            <p class="import-warn">Your previous version stays in the Gist's revision history.</p>
             <div class="modal-footer">
                 <button class="btn btn-cancel" id="mi-cancel">Cancel</button>
-                <button class="btn btn-primary" id="mi-ok" style="width:auto">Import and save</button>
+                <button class="btn btn-primary" id="mi-ok" style="width:auto" ${needsTick ? 'disabled' : ''}>Import and save</button>
             </div>
         </div>
     </div>`);
     const close = () => { const m = document.getElementById('mo-import'); if (m) m.remove(); };
+    const ok = document.getElementById('mi-ok');
+    const tick = document.getElementById('mi-tick');
+    if (tick) tick.onchange = () => { ok.disabled = !tick.checked; };
     document.getElementById('mi-x').onclick = close;
     document.getElementById('mi-cancel').onclick = close;
-    document.getElementById('mi-ok').onclick = async () => {
+    ok.onclick = async () => {
+        if (needsTick && !(tick && tick.checked)) return;
+        ok.disabled = true;
         contacts = next;
         migrateNotes();
         close();
