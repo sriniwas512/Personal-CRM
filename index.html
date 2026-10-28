@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://gist.githubusercontent.com; img-src 'self' data:; font-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://gist.githubusercontent.com; img-src 'self' data:; font-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none';">
     <title>Personal CRM</title>
     <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png">
     <link rel="shortcut icon" href="./favicon.png">
@@ -201,7 +201,10 @@ async function encrypt(secret, text) {
     const enc  = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, new TextEncoder().encode(text));
     const out  = new Uint8Array(16 + 12 + enc.byteLength);
     out.set(salt); out.set(iv, 16); out.set(new Uint8Array(enc), 28);
-    return btoa(String.fromCharCode(...out));
+    // Convert in 32 KB chunks: passing every byte as a separate argument crashes once data passes a few hundred KB.
+    let bin = '';
+    for (let i = 0; i < out.length; i += 0x8000) bin += String.fromCharCode.apply(null, out.subarray(i, i + 0x8000));
+    return btoa(bin);
 }
 async function decrypt(secret, b64) {
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
@@ -224,42 +227,79 @@ let todoFilterDay = 'All';
 let todoFilterMonth = 'All';
 let todoFilterYear = 'All';
 let sortConfig = { key: 'nextContact', direction: 'asc' };
-let logoutTimer;
-let logoutWarningTimer;
-let lastSyncDate = null;
+let lastSyncDate = null;   // updated_at of the Gist version this page last loaded or saved
 
-function resetLogoutTimer() {
-    clearTimeout(logoutTimer);
-    clearTimeout(logoutWarningTimer);
-    if (token) {
-        logoutWarningTimer = setTimeout(() => {
-            toast('⏳ Your session will expire in 60 seconds. Move your mouse or press a key to stay logged in.', 10000);
-        }, 3540000); // 59 minutes
-        
-        logoutTimer = setTimeout(() => {
-            handleLogout('You have been logged out due to inactivity.');
-        }, 3600000); // 60 minutes
+// ── INACTIVITY LOGOUT ─────────────────────────────────────────────────────────
+// Measured against the clock rather than one long timer, because timers pause while
+// a laptop sleeps and would otherwise leave the CRM open when it wakes.
+const SESSION_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 hours
+const SESSION_WARNING_MS = 60 * 1000;          // warn 1 minute before
+let lastActivity = Date.now();
+let warnedAboutTimeout = false;
+let loggingOutForInactivity = false;
+
+function checkInactivity() {
+    if (!token || loggingOutForInactivity) return;
+    const idle = Date.now() - lastActivity;
+    if (idle >= SESSION_TIMEOUT_MS) {
+        logoutForInactivity();
+    } else if (idle >= SESSION_TIMEOUT_MS - SESSION_WARNING_MS && !warnedAboutTimeout) {
+        warnedAboutTimeout = true;
+        toast('⏳ Your session will expire in 60 seconds. Move your mouse or press a key to stay logged in.', 10000);
     }
 }
 
-['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(name => {
+function resetLogoutTimer() {
+    if (token) checkInactivity(); // the first touch after 3 idle hours must log out, not extend the session
+    lastActivity = Date.now();
+    warnedAboutTimeout = false;
+}
+
+async function logoutForInactivity() {
+    loggingOutForInactivity = true;
+    try {
+        // Give edits that haven't reached GitHub one last chance before signing out.
+        if (_unsaved && !_conflict) {
+            clearTimeout(_saveTimer); _saveTimer = null;
+            clearTimeout(_retryTimer); _retryTimer = null;
+            await new Promise(resolve => { _saveWaiters.push(resolve); runSave(); });
+        }
+        const lost = _unsaved;
+        handleLogout('You were signed out after 3 hours of inactivity.' + (lost ? ' Some recent changes could not be saved to GitHub.' : ''));
+    } finally {
+        loggingOutForInactivity = false;
+    }
+}
+
+setInterval(checkInactivity, 15000);
+document.addEventListener('visibilitychange', checkInactivity);
+['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(name => {
     document.addEventListener(name, resetLogoutTimer, true);
 });
 
 const GIST_FILE = 'personal-crm-sync.enc';
 let gistId = null;
 
+// Ids end up inside HTML attributes, so only allow plain characters. Dates are calendar days.
+const ID_RE   = /^[A-Za-z0-9_-]{1,64}$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 
 // ── GITHUB API ────────────────────────────────────────────────────────────────
+// opts.token lets a save keep using the token it started with, even if the user signs out meanwhile.
 async function gh(path, opts = {}) {
+    const { token: tok = token, ...fetchOpts } = opts;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    // Uploads can be several MB, so they get longer than reads.
+    const timeout = setTimeout(() => controller.abort(), fetchOpts.body ? 60000 : 15000);
     try {
         const r = await fetch('https://api.github.com' + path, {
-            ...opts,
+            ...fetchOpts,
+            // Never answer from the browser cache: a stale copy would hide changes made on another device.
+            cache: 'no-store',
             signal: controller.signal,
             headers: {
-                'Authorization': 'Bearer ' + token,
+                'Authorization': 'Bearer ' + tok,
                 'Accept': 'application/vnd.github+json',
                 'Content-Type': 'application/json',
                 ...(opts.headers || {})
@@ -276,39 +316,51 @@ async function gh(path, opts = {}) {
 }
 
 
-async function findGist() {
+// Returns the CRM Gist (full details), or null if this account doesn't have one.
+async function fetchCrmGist(tok = token) {
     if (gistId) {
         try {
-            const g = await gh('/gists/' + gistId);
-            if (g.files[GIST_FILE]) return gistId;
-        } catch {}
-        gistId = null;
+            const g = await gh('/gists/' + gistId, { token: tok });
+            if (g.files && g.files[GIST_FILE]) return g;
+        } catch (e) {
+            if (e.message !== '404') throw e; // a network error must not look like "no data"
+        }
+        if (tok === token) gistId = null;
     }
-    // Scan for existing gist (handles new device login)
+    // Scan for the Gist (handles a new device or a first login)
     let page = 1;
     while (true) {
-        const list = await gh(`/gists?per_page=100&page=${page}`);
+        const list = await gh(`/gists?per_page=100&page=${page}`, { token: tok });
         if (!list.length) break;
         const found = list.find(g => g.files && g.files[GIST_FILE]);
-        if (found) { gistId = found.id; return found.id; }
+        if (found) {
+            if (tok === token) gistId = found.id;
+            return gh('/gists/' + found.id, { token: tok });
+        }
         if (list.length < 100) break;
         page++;
     }
     return null;
 }
 
-function migrateNotes() {
-    ['personal', 'professional'].forEach(tab => {
-        contacts[tab] = contacts[tab].map(c => {
-            if (typeof c.notes === 'string') {
-                const text = c.notes.trim();
-                c.notes = text ? [{ date: today(), text }] : [];
-            } else if (!Array.isArray(c.notes)) {
-                c.notes = [];
-            }
-            return c;
-        });
-    });
+// The encrypted text stored in a Gist. GitHub cuts off file contents above 1 MB in API
+// responses; the rest is fetched from the raw link (GitHub serves raw files up to ~10 MB).
+async function readGistContent(g) {
+    const file = g.files[GIST_FILE];
+    if (!file.truncated) return file.content;
+    if (typeof file.raw_url !== 'string' || !file.raw_url.startsWith('https://gist.githubusercontent.com/')) {
+        throw new Error('Unexpected raw_url origin — possible API tampering');
+    }
+    // Secret-Gist raw links work without the token, so it isn't sent to a second host.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+        const r = await fetch(file.raw_url, { cache: 'no-store', signal: controller.signal });
+        if (!r.ok) throw new Error(r.status);
+        return r.text();
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 // Validates and normalises a decrypted (or imported) payload. Throws on anything unexpected.
@@ -323,143 +375,223 @@ function sanitizeData(parsed) {
     };
     if (hasDangerousKey(parsed)) throw new Error('Invalid data format');
 
+    const obj  = (v) => (v && typeof v === 'object' ? v : {});
     const str  = (v, fallback = '') => (typeof v === 'string' ? v : fallback);
     const bool = (v) => v === true;
+    const id   = (v) => (typeof v === 'string' && ID_RE.test(v) ? v : genId());
+    const date = (v) => (typeof v === 'string' && DATE_RE.test(v) ? v : '');
+    const contactNotes = (n) => {
+        if (typeof n === 'string') return n.trim() ? [{ date: today(), text: n.trim() }] : []; // notes saved before April 2026 were one string
+        return Array.isArray(n) ? n.map(obj).map(x => ({ date: date(x.date), text: str(x.text) })) : [];
+    };
     const sanitizeContact = (c) => ({
-        id:          str(c.id) || genId(),
+        id:          id(c.id),
         name:        str(c.name),
         institution: str(c.institution),
         region:      str(c.region),
-        lastContact: str(c.lastContact),
-        nextContact: str(c.nextContact),
-        notes:       Array.isArray(c.notes)
-            ? c.notes.map(n => ({ date: str(n.date), text: str(n.text) }))
-            : []
+        lastContact: date(c.lastContact),
+        nextContact: date(c.nextContact),
+        notes:       contactNotes(c.notes)
     });
-    const sanitizeNote = (n) => ({ id: str(n.id) || genId(), date: str(n.date), text: str(n.text) });
+    const sanitizeNote = (n) => ({ id: id(n.id), date: date(n.date), text: str(n.text) });
     const sanitizeTodo = (t) => ({
-        id:    str(t.id) || genId(),
-        date:  str(t.date),
+        id:    id(t.id),
+        date:  date(t.date),
         title: str(t.title),
         items: Array.isArray(t.items)
-            ? t.items.map(i => ({ text: str(i.text), done: bool(i.done) }))
+            ? t.items.map(obj).map(i => ({ text: str(i.text), done: bool(i.done) }))
             : []
     });
+    const list = (v) => (Array.isArray(v) ? v : []).map(obj);
 
     return {
-        personal:     (Array.isArray(parsed.personal)     ? parsed.personal     : []).map(sanitizeContact),
-        professional: (Array.isArray(parsed.professional) ? parsed.professional : []).map(sanitizeContact),
-        notesDiary:   (Array.isArray(parsed.notesDiary)   ? parsed.notesDiary   : []).map(sanitizeNote),
-        todos:        (Array.isArray(parsed.todos)        ? parsed.todos        : []).map(sanitizeTodo)
+        personal:     list(parsed.personal).map(sanitizeContact),
+        professional: list(parsed.professional).map(sanitizeContact),
+        notesDiary:   list(parsed.notesDiary).map(sanitizeNote),
+        todos:        list(parsed.todos).map(sanitizeTodo)
     };
 }
 
 async function loadFromGist() {
-    const id = await findGist();
-    let remoteRaw = null;
+    const g = await fetchCrmGist();
+    if (!g) return false;
+    const raw = await readGistContent(g);
+    if (!raw) return false;
 
-    if (id) {
-        const g    = await gh('/gists/' + id);
-        const file = g.files[GIST_FILE];
-        if (file) {
-            if (file.truncated) {
-                if (typeof file.raw_url !== 'string' || !file.raw_url.startsWith('https://gist.githubusercontent.com/')) {
-                    throw new Error('Unexpected raw_url origin — possible API tampering');
-                }
-                remoteRaw = await (await fetch(file.raw_url, { headers: { 'Authorization': 'Bearer ' + token } })).text();
-            } else {
-                remoteRaw = file.content;
-            }
-            lastSyncDate = g.updated_at;
-        }
-    }
-    
-    let rawToUse = remoteRaw;
-
-    if (!rawToUse) return false;
-    
     let parsed;
     try {
-        parsed = JSON.parse(await decrypt(token, rawToUse.trim()));
+        parsed = JSON.parse(await decrypt(token, raw.trim()));
     } catch {
         throw new Error('DECRYPT_FAIL');
     }
     contacts = sanitizeData(parsed);
-    migrateNotes();
+    lastSyncDate = g.updated_at;
     return true;
 }
 
-
+// ── SAVING ────────────────────────────────────────────────────────────────────
+// Edits are saved 0.4 s after the last change. Only one save talks to GitHub at a time;
+// edits made meanwhile go out in the next one. Before writing, the Gist is checked so a
+// newer version saved from another device or tab is never overwritten without asking.
+const STORAGE_WARN_CHARS = 8 * 1024 * 1024; // GitHub stops serving Gist files to the app above ~10 MB
 let _saveTimer = null;
 let _retryTimer = null;
-async function saveToGist() {
-    if (!token) return;
-    // Debounce rapid saves to avoid race conditions
-    if (_saveTimer) clearTimeout(_saveTimer);
+let _saving = false;       // a save is talking to GitHub right now
+let _saveQueued = false;   // another save was asked for while that one ran
+let _saveWaiters = [];     // callers waiting for their change to be saved
+let _unsaved = false;      // there are changes GitHub doesn't have yet
+let _conflict = null;      // set when another device saved first; auto-save pauses until resolved
+let _lastSentSnapshot = null;
+
+function saveToGist() {
+    if (!token) return Promise.resolve();
+    _unsaved = true;
+    if (_conflict) { setSyncBadge('conflict'); return Promise.resolve(); }
     setSyncBadge('syncing');
+    clearTimeout(_saveTimer);
+    clearTimeout(_retryTimer); _retryTimer = null;
     return new Promise(resolve => {
-        _saveTimer = setTimeout(async () => {
-            try {
-                const snapshot = JSON.stringify(contacts);
-                const content = await encrypt(token, snapshot);
-
-                // Storage warning check (warn at 75MB base64 size to safely avoid 100MB hard limit)
-                if (content.length > 78643200) {
-                    toast('⚠ Storage is reaching limits! Please export (.md) your data soon as a backup.', 10000);
-                }
-
-                const body    = JSON.stringify({
-                    description: 'Personal CRM data — do not edit manually',
-                    public: false,
-                    files: { [GIST_FILE]: { content } }
-                });
-                let id = gistId;
-                if (id) {
-                    try {
-                        const res = await gh('/gists/' + id, { method:'PATCH', body });
-                        lastSyncDate = res.updated_at;
-
-                    } catch {
-                        id = null;
-                        gistId = null;
-                    }
-                }
-                if (!id) {
-                    id = await findGist();
-                    if (id) {
-                        const res = await gh('/gists/' + id, { method:'PATCH', body });
-                        lastSyncDate = res.updated_at;
-                    } else {
-                        const g = await gh('/gists', { method:'POST', body });
-                        id = g.id;
-                        lastSyncDate = g.updated_at;
-                    }
-                    gistId = id;
-                }
-                setSyncBadge('ok');
-            } catch {
-                setSyncBadge('err');
-
-                // Auto-retry in background to ensure data is synced when connection restores
-                if (!_retryTimer) {
-                    _retryTimer = setTimeout(() => {
-                        _retryTimer = null;
-                        saveToGist();
-                    }, 5000);
-                }
-            }
-            resolve();
-        }, 400);
+        _saveWaiters.push(resolve);
+        _saveTimer = setTimeout(runSave, 400);
     });
 }
 
+async function runSave() {
+    _saveTimer = null;
+    if (_saving) { _saveQueued = true; return; }
+    _saving = true;
+    const tok = token;
+    const waiters = _saveWaiters;
+    _saveWaiters = [];
+    let error = null;
+    try {
+        await writeGist(tok, JSON.stringify(contacts));
+    } catch (e) {
+        error = e;
+    }
+    _saving = false;
+    waiters.forEach(resolve => resolve());
+    if (_saveQueued) { _saveQueued = false; runSave(); return; }
+    if (tok !== token) return; // signed out while saving; nothing to report
+
+    if (!error) {
+        if (!_saveTimer) { _unsaved = false; setSyncBadge('ok'); }
+    } else if (error.message === 'CONFLICT') {
+        _conflict = { remoteUpdatedAt: error.remoteUpdatedAt };
+        setSyncBadge('conflict');
+        openConflictModal();
+    } else {
+        setSyncBadge('err');
+        // Keep retrying in the background so changes go out once the connection is back.
+        if (!_saveTimer && !_retryTimer) {
+            _retryTimer = setTimeout(() => { _retryTimer = null; runSave(); }, 5000);
+        }
+    }
+}
+
+async function writeGist(tok, snapshot) {
+    const stillSignedIn = () => { if (tok !== token) throw new Error('SIGNED_OUT'); };
+    const content = await encrypt(tok, snapshot);
+    if (content.length > STORAGE_WARN_CHARS) {
+        toast('⚠ Your CRM is getting close to the ~10 MB Gist limit. Download a .md backup and consider archiving old notes.', 10000);
+    }
+    const body = JSON.stringify({
+        description: 'Personal CRM data — do not edit manually',
+        public: false,
+        files: { [GIST_FILE]: { content } }
+    });
+
+    const remote = await fetchCrmGist(tok);
+    stillSignedIn();
+    if (remote && remote.updated_at !== lastSyncDate) {
+        // Something saved after this page last loaded or saved. It may just be our own earlier
+        // save that landed after the connection dropped; if so, it isn't a real conflict.
+        let ours = false;
+        try {
+            ours = _lastSentSnapshot !== null && await decrypt(tok, (await readGistContent(remote)).trim()) === _lastSentSnapshot;
+        } catch {}
+        stillSignedIn();
+        if (!ours) {
+            const err = new Error('CONFLICT');
+            err.remoteUpdatedAt = remote.updated_at;
+            throw err;
+        }
+    }
+
+    _lastSentSnapshot = snapshot;
+    const res = remote
+        ? await gh('/gists/' + remote.id, { method: 'PATCH', body, token: tok })
+        : await gh('/gists', { method: 'POST', body, token: tok });
+    stillSignedIn();
+    gistId = res.id;
+    lastSyncDate = res.updated_at;
+}
+
+function openConflictModal() {
+    if (!_conflict || document.getElementById('mo-conflict')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="mo-conflict">
+        <div class="modal" style="max-width:540px">
+            <div class="modal-header"><h3 class="modal-title">Changed on another device</h3><button class="modal-close" id="mcf-x">&times;</button></div>
+            <p class="import-alert"><b>Saving is paused.</b> Your CRM was saved from another device or tab after this page loaded it. Saving now would erase those changes.</p>
+            <div class="import-names">
+                <div><b>To keep both:</b> 1) Save this page's version to a file. 2) Load the latest version. 3) Use <b>Import</b> with that file — it shows exactly what will change before anything is saved.</div>
+            </div>
+            <div class="modal-footer" style="flex-wrap:wrap">
+                <button class="btn btn-cancel" id="mcf-file">1. Save my version to a file</button>
+                <button class="btn btn-primary" id="mcf-load" style="width:auto">2. Load the latest version</button>
+            </div>
+            <div class="modal-footer" style="margin-top:12px">
+                <button class="btn-sm danger" id="mcf-overwrite">Overwrite with my version instead</button>
+            </div>
+        </div>
+    </div>`);
+    const close = () => { const m = document.getElementById('mo-conflict'); if (m) m.remove(); };
+    document.getElementById('mcf-x').onclick = close;
+    document.getElementById('mcf-file').onclick = exportForClaude;
+    document.getElementById('mcf-load').onclick = async () => {
+        if (!confirm('Load the latest version? Any changes on this page that haven\'t saved will be discarded (unless you saved them to a file).')) return;
+        try {
+            const loaded = await loadFromGist();
+            if (!loaded) throw new Error('missing');
+        } catch {
+            toast('Couldn\'t load the latest version. Check your connection and try again.', 6000);
+            return;
+        }
+        _conflict = null;
+        _unsaved = false;
+        syncState = 'ok';
+        close();
+        renderApp();
+        toast('Loaded the latest version.');
+    };
+    document.getElementById('mcf-overwrite').onclick = () => {
+        if (!confirm('Replace the version saved from the other device with this page\'s version? The other version stays in the Gist\'s revision history on GitHub.')) return;
+        lastSyncDate = _conflict.remoteUpdatedAt;
+        _conflict = null;
+        close();
+        saveToGist();
+    };
+}
+
+// Warn before closing the tab while changes are still on their way to GitHub.
+window.addEventListener('beforeunload', e => {
+    if (token && _unsaved) { e.preventDefault(); e.returnValue = ''; }
+});
+
 
 // ── DATE UTILS ────────────────────────────────────────────────────────────────
-function addDays(d, n) { const x = new Date(d+'T00:00:00'); x.setDate(x.getDate()+n); return x.toISOString().split('T')[0]; }
-function fmtDate(d)    { if(!d) return '—'; return new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
-function today()       { return new Date().toISOString().split('T')[0]; }
+// All dates are calendar days ("YYYY-MM-DD"), and "today" is always the date in Singapore
+// (UTC+8, no daylight saving), whatever time zone the device is set to. Date maths is done in
+// UTC on those calendar days so it can't drift by a day.
+const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
+function today()       { return new Date(Date.now() + SGT_OFFSET_MS).toISOString().slice(0, 10); }
+function dayMs(d)      { return Date.parse(d + 'T00:00:00Z'); }
+function addDays(d, n) { return new Date(dayMs(d) + n * 86400000).toISOString().slice(0, 10); }
+function fmtDate(d)    { if(!d) return '—'; return new Date(dayMs(d)).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}); }
+function byDateDesc(a, b) { return (b.date || '').localeCompare(a.date || ''); }
 function getStatus(next) {
-    const diff = Math.ceil((new Date(next+'T00:00:00') - new Date(today()+'T00:00:00')) / 86400000);
+    const diff = Math.round((dayMs(next) - dayMs(today())) / 86400000);
     if (diff < 0)  return { label:'Overdue by '+Math.abs(diff)+'d', cls:'status-overdue',  diff };
     if (diff <= 7) return { label:'Due Soon',                        cls:'status-due-soon', diff };
     return               { label:'Upcoming',                         cls:'status-upcoming', diff };
@@ -471,8 +603,8 @@ function sortContacts(list) {
             vA = (a[sortConfig.key] || '').toLowerCase();
             vB = (b[sortConfig.key] || '').toLowerCase();
         } else {
-            vA = new Date(a[sortConfig.key] || '1970-01-01');
-            vB = new Date(b[sortConfig.key] || '1970-01-01');
+            vA = a[sortConfig.key] || ''; // YYYY-MM-DD sorts correctly as text
+            vB = b[sortConfig.key] || '';
         }
         if (vA < vB) return sortConfig.direction === 'asc' ? -1 : 1;
         if (vA > vB) return sortConfig.direction === 'asc' ? 1 : -1;
@@ -502,29 +634,22 @@ function overdueCount(tab) { return (contacts[tab] || []).filter(c => c.nextCont
 // ── TO DO ─────────────────────────────────────────────────────────────────────
 function renderTodosGrid() {
     const list = [...(contacts.todos || [])].filter(c => {
-        const d = new Date(c.date+'T00:00:00');
-        if (todoFilterDay   !== 'All' && String(d.getDate()).padStart(2,'0')    !== todoFilterDay)   return false;
-        if (todoFilterMonth !== 'All' && String(d.getMonth()+1).padStart(2,'0') !== todoFilterMonth) return false;
-        if (todoFilterYear  !== 'All' && String(d.getFullYear())                !== todoFilterYear)  return false;
+        const d = c.date || '';
+        if (todoFilterDay   !== 'All' && d.slice(8, 10) !== todoFilterDay)   return false;
+        if (todoFilterMonth !== 'All' && d.slice(5, 7)  !== todoFilterMonth) return false;
+        if (todoFilterYear  !== 'All' && d.slice(0, 4)  !== todoFilterYear)  return false;
         return true;
-    }).sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'));
+    }).sort(byDateDesc);
     if (!list.length) return `<div class="todo-empty"><div class="icon">✅</div><p>No cards yet — click <strong>+ Add Card</strong> to get started.</p></div>`;
     return `<div class="todo-grid">` + list.map(card => {
         const items = card.items || [];
         const cid = esc(card.id);
         return `<div class="todo-card" data-id="${cid}">
             <button class="todo-card-del" data-del="${cid}" title="Delete card">&times;</button>
-            <div class="todo-card-date">${fmtDate(card.date)}</div>
+            <div class="todo-card-date">${esc(fmtDate(card.date))}</div>
             ${card.title ? `<div class="todo-card-title">${esc(card.title)}</div>` : ''}
             ${items.length ? `<hr class="todo-divider">` : ''}
-            <div class="todo-items-list" data-card="${cid}">
-                ${items.map((item, idx) => `
-                <div class="todo-item">
-                    <input type="checkbox" data-card="${cid}" data-idx="${idx}" ${item.done ? 'checked' : ''}>
-                    <span class="todo-item-text${item.done?' done':''}" data-card="${cid}" data-idx="${idx}">${esc(item.text)}</span>
-                    <button class="todo-item-del" data-card="${cid}" data-idx="${idx}" title="Delete task">×</button>
-                </div>`).join('')}
-            </div>
+            <div class="todo-items-list" data-card="${cid}">${renderTodoItems(card)}</div>
             <div class="todo-add-item">
                 <input type="text" placeholder="Add task…" data-card-input="${cid}">
                 <button data-card-add="${cid}">+</button>
@@ -533,18 +658,23 @@ function renderTodosGrid() {
     }).join('') + `</div>`;
 }
 
+function renderTodoItems(card) {
+    const cid = esc(card.id);
+    return (card.items || []).map((item, i) => `
+        <div class="todo-item">
+            <input type="checkbox" data-card="${cid}" data-idx="${i}" ${item.done ? 'checked' : ''}>
+            <span class="todo-item-text${item.done?' done':''}" data-card="${cid}" data-idx="${i}">${esc(item.text)}</span>
+            <button class="todo-item-del" data-card="${cid}" data-idx="${i}" title="Delete task">×</button>
+        </div>`).join('');
+}
+
 // Re-renders just one card's items list and re-wires all events
 function rerenderCardItems(cardId) {
     const card = contacts.todos.find(c => c.id === cardId);
     if (!card) return;
-    const list = document.querySelector(`.todo-items-list[data-card="${cardId}"]`);
+    const list = document.querySelector(`.todo-items-list[data-card="${CSS.escape(cardId)}"]`);
     if (!list) return;
-    list.innerHTML = card.items.map((item, i) => `
-        <div class="todo-item">
-            <input type="checkbox" data-card="${cardId}" data-idx="${i}" ${item.done ? 'checked' : ''}>
-            <span class="todo-item-text${item.done?' done':''}" data-card="${cardId}" data-idx="${i}">${esc(item.text)}</span>
-            <button class="todo-item-del" data-card="${cardId}" data-idx="${i}" title="Delete task">×</button>
-        </div>`).join('');
+    list.innerHTML = renderTodoItems(card);
     wireCardItemEvents(list, card);
 }
 
@@ -609,7 +739,8 @@ function attachTodoEvents() {
         btn.onclick = async () => {
             if (!confirm('Delete this card?')) return;
             contacts.todos = contacts.todos.filter(c => c.id !== btn.dataset.del);
-            await saveToGist(); refreshTable();
+            refreshTable();
+            saveToGist();
         };
     });
     // Add item — instant re-render of card items, save in background
@@ -625,7 +756,7 @@ function attachTodoEvents() {
     }
     document.querySelectorAll('[data-card-add]').forEach(btn => {
         btn.onclick = () => {
-            const inp = document.querySelector(`[data-card-input="${btn.dataset.cardAdd}"]`);
+            const inp = document.querySelector(`[data-card-input="${CSS.escape(btn.dataset.cardAdd)}"]`);
             if (inp) addTodoItem(btn.dataset.cardAdd, inp);
         };
     });
@@ -648,7 +779,7 @@ function openTodoModal() {
             </div>
             <div class="form-group">
                 <label>Title <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-                <input type="text" id="td-title" class="form-control" value="${fmtDate(today())}" placeholder="e.g. Work tasks, Errands…">
+                <input type="text" id="td-title" class="form-control" value="${esc(fmtDate(today()))}" placeholder="e.g. Work tasks, Errands…">
             </div>
             <div class="modal-footer">
                 <button class="btn btn-cancel" id="mtc2">Cancel</button>
@@ -665,9 +796,9 @@ function openTodoModal() {
         const title = document.getElementById('td-title').value.trim();
         if (!date) { alert('Please pick a date.'); return; }
         contacts.todos.push({ id: genId(), date, title, items: [] });
-        await saveToGist();
-        close();
+        close(); // closing first means a double-click can't create a second card
         refreshTable();
+        saveToGist();
         toast('Card created. Add tasks directly on the card.');
     };
     document.getElementById('td-date').focus();
@@ -691,7 +822,7 @@ function downloadMarkdown() {
     
     if (contacts.notesDiary && contacts.notesDiary.length > 0) {
         md += `--- \n\n## General Notes Diary\n\n`;
-        const sortedDiary = [...contacts.notesDiary].sort((a,b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
+        const sortedDiary = [...contacts.notesDiary].sort(byDateDesc);
         sortedDiary.forEach(n => {
             md += `### ${fmtDate(n.date)}\n${n.text}\n\n`;
         });
@@ -699,7 +830,7 @@ function downloadMarkdown() {
     
     if (contacts.todos && contacts.todos.length > 0) {
         md += `---\n\n## To Do List\n\n`;
-        const sortedTodos = [...contacts.todos].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'));
+        const sortedTodos = [...contacts.todos].sort(byDateDesc);
         sortedTodos.forEach(card => {
             md += `### ${fmtDate(card.date)}${card.title ? ' — ' + card.title : ''}\n`;
             (card.items || []).forEach(item => {
@@ -762,16 +893,28 @@ async function importFromClaude(file) {
         fail('That isn\'t a Personal CRM export. Choose the .json file from "Export for Claude", or one Claude gave you.'); return;
     }
     if (raw.version > BRIDGE_VERSION) { fail('This file was made by a newer version of the app. Update the app and try again.'); return; }
-    try { next = sanitizeData(raw.data); }
-    catch { fail('That file has data the app can\'t accept, so nothing was imported.'); return; }
 
-    // Every record needs a unique id, or changes can't be matched up reliably.
+    // Every record needs a unique, plain id (letters, digits, - and _), or changes can't be matched
+    // up reliably. Plain ids also mean nothing in the file can sneak code into the page.
     for (const k of SECTIONS) {
         const ids = raw.data[k].map(x => x && x.id);
-        if (ids.some(id => typeof id !== 'string' || !id) || new Set(ids).size !== ids.length) {
-            fail('Some records in that file are missing an id or share one, so nothing was imported.'); return;
+        if (ids.some(id => typeof id !== 'string' || !ID_RE.test(id)) || new Set(ids).size !== ids.length) {
+            fail('Some records in that file have a missing, invalid or shared id, so nothing was imported.'); return;
         }
     }
+    // Dates must be YYYY-MM-DD; otherwise they'd be blanked on import and silently lost.
+    const contactDates = c => [c && c.lastContact, c && c.nextContact, ...(c && Array.isArray(c.notes) ? c.notes.map(n => n && n.date) : [])];
+    const allDates = [
+        ...raw.data.professional.flatMap(contactDates),
+        ...raw.data.personal.flatMap(contactDates),
+        ...raw.data.notesDiary.map(n => n && n.date),
+        ...raw.data.todos.map(t => t && t.date),
+    ];
+    if (allDates.some(d => d != null && d !== '' && !(typeof d === 'string' && DATE_RE.test(d)))) {
+        fail('Some dates in that file aren\'t written as YYYY-MM-DD, so nothing was imported.'); return;
+    }
+    try { next = sanitizeData(raw.data); }
+    catch { fail('That file has data the app can\'t accept, so nothing was imported.'); return; }
 
     const nowContacts = contacts.professional.length + contacts.personal.length;
     const nextContacts = next.professional.length + next.personal.length;
@@ -828,7 +971,6 @@ async function importFromClaude(file) {
         if (needsTick && !(tick && tick.checked)) return;
         ok.disabled = true;
         contacts = next;
-        migrateNotes();
         close();
         renderApp();
         await saveToGist();
@@ -840,13 +982,17 @@ function toast(msg, ms=2800) {
     const t = document.createElement('div'); t.className='toast'; t.textContent=msg;
     document.body.appendChild(t); setTimeout(()=>t.remove(), ms);
 }
+let syncState = 'ok'; // remembered so a full re-render shows the real state
 function setSyncBadge(state) {
+    syncState = state;
     const el = document.getElementById('sync-badge');
     if (!el) return;
-    const map = { syncing:['sync-syncing','⟳ Syncing…'], ok:['sync-ok','✓ Synced'], err:['sync-err','⚠ Sync Failed'] };
+    const map = { syncing:['sync-syncing','⟳ Syncing…'], ok:['sync-ok','✓ Synced'], err:['sync-err','⚠ Sync Failed — retrying'], conflict:['sync-err','⚠ Saving paused — click'] };
     const [cls, label] = map[state] || ['',''];
     el.className = 'sync-badge ' + cls;
     el.textContent = label;
+    el.style.cursor = state === 'conflict' ? 'pointer' : '';
+    el.onclick = state === 'conflict' ? openConflictModal : null;
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -878,6 +1024,8 @@ async function handleLogin(tok) {
     if (!tok) { renderLogin('Please paste your GitHub token.'); return; }
     const btn = document.getElementById('login-btn');
     btn.textContent = 'Signing in…'; btn.disabled = true;
+    lastActivity = Date.now(); // the 3-hour clock starts at sign-in
+    warnedAboutTimeout = false;
     try {
         token = tok;
         // Verify token via GitHub — this IS the authentication
@@ -894,19 +1042,14 @@ async function handleLogin(tok) {
                 `Start fresh with an empty CRM for @${username}?`
             );
             if (!proceed) {
-                token = '';
-                username = '';
-                gistId = null;
-                renderLogin('Login cancelled. Please try your original token.');
+                handleLogout('Login cancelled. Please try your original token.');
                 return;
             }
             contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
         }
         renderApp();
     } catch (e) {
-        token = '';
-        username = '';
-        gistId = null;
+        handleLogout();
         let msg = 'Could not connect to GitHub. Check your token and network.';
         if (e.name === 'AbortError')       msg = 'Request timed out. Check your network and try again.';
         else if (e.message === '401')       msg = 'Invalid token. Please check and try again.';
@@ -920,13 +1063,25 @@ async function handleLogin(tok) {
 function handleLogout(msg = '') {
     token = '';
     username = '';
-    // Clear all references — JS strings are immutable so GC handles actual memory
+    // Drop all references so the browser can discard the decrypted data. (JavaScript can't
+    // overwrite strings in memory, so this is the most a web page can do.)
     contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
     gistId = null;
-    clearTimeout(logoutTimer);
-    clearTimeout(logoutWarningTimer);
+    lastSyncDate = null;
 
-    // Wipe DOM to remove decrypted text fragments
+    // Stop pending saves. A save already talking to GitHub notices the sign-out and stops.
+    clearTimeout(_saveTimer); _saveTimer = null;
+    clearTimeout(_retryTimer); _retryTimer = null;
+    _saveQueued = false;
+    _saveWaiters.forEach(resolve => resolve());
+    _saveWaiters = [];
+    _unsaved = false;
+    _conflict = null;
+    _lastSentSnapshot = null;
+    syncState = 'ok';
+
+    // Wipe the page, including any open pop-up, to remove decrypted text
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
     const root = document.getElementById('root');
     if (root) root.innerHTML = '';
 
@@ -992,10 +1147,10 @@ function renderApp() {
             </div>
         </div>` : ''}
         ${currentTab === 'todos' ? (() => {
-            const dates = (contacts.todos || []).map(c => new Date(c.date+'T00:00:00'));
-            const days   = ['All', ...new Set(dates.map(d => String(d.getDate()).padStart(2,'0')))].sort((a,b) => a==='All'?-1:+a-+b);
-            const months = ['All', ...new Set(dates.map(d => String(d.getMonth()+1).padStart(2,'0')))].sort((a,b) => a==='All'?-1:+a-+b);
-            const years  = ['All', ...new Set(dates.map(d => String(d.getFullYear())))].sort((a,b) => a==='All'?-1:+a-+b);
+            const dates = (contacts.todos || []).map(c => c.date).filter(Boolean);
+            const days   = ['All', ...new Set(dates.map(d => d.slice(8, 10)))].sort((a,b) => a==='All'?-1:b==='All'?1:+a-+b);
+            const months = ['All', ...new Set(dates.map(d => d.slice(5, 7)))].sort((a,b) => a==='All'?-1:b==='All'?1:+a-+b);
+            const years  = ['All', ...new Set(dates.map(d => d.slice(0, 4)))].sort((a,b) => a==='All'?-1:b==='All'?1:+a-+b);
             const MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             return `<div class="filter-bar">
                 <div class="filter-group">
@@ -1025,7 +1180,11 @@ function renderApp() {
         }
     </main>`;
 
-    document.getElementById('logout-btn').onclick = () => handleLogout();
+    setSyncBadge(syncState);
+    document.getElementById('logout-btn').onclick = () => {
+        if (_unsaved && !confirm('Some changes haven\'t been saved to GitHub yet and will be lost if you sign out now. Sign out anyway?')) return;
+        handleLogout();
+    };
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
     document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : openModal(null);
     document.getElementById('dl-btn').onclick = downloadMarkdown;
@@ -1069,7 +1228,7 @@ function refreshTable() {
 }
 
 function renderNotesTable() {
-    const list = [...(contacts.notesDiary || [])].sort((a,b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
+    const list = [...(contacts.notesDiary || [])].sort(byDateDesc);
     if (!list.length) return `<div class="empty-state"><div class="icon">📓</div><p>No diary entries yet.</p></div>`;
     
     return `<table><thead><tr>
@@ -1082,8 +1241,8 @@ function renderNotesTable() {
             <td><span class="contact-name">${fmtDate(n.date)}</span></td>
             <td><div style="white-space: pre-wrap; font-size: 14px;">${esc(n.text)}</div></td>
             <td><div class="action-btns">
-                <button class="btn-icon edit-note-btn" data-id="${n.id}">Edit</button>
-                <button class="btn-icon delete delete-note-btn" data-id="${n.id}">Delete</button>
+                <button class="btn-icon edit-note-btn" data-id="${esc(n.id)}">Edit</button>
+                <button class="btn-icon delete delete-note-btn" data-id="${esc(n.id)}">Delete</button>
             </div></td>
         </tr>
     `).join('') + '</tbody></table>';
@@ -1108,7 +1267,7 @@ function openNoteModal(editId) {
         <div class="modal">
             <div class="modal-header"><h3 class="modal-title">${entry?'Edit':'Add'} Diary Entry</h3><button class="modal-close" id="mc-note">&times;</button></div>
             <div class="form-group"><label>Date <span style="color:var(--danger)">*</span></label>
-                <input type="date" id="n-date" class="form-control" value="${entry?.date||today()}"></div>
+                <input type="date" id="n-date" class="form-control" value="${esc(entry?.date||today())}"></div>
             <div class="form-group"><label>Note <span style="color:var(--danger)">*</span></label>
                 <textarea id="n-text" class="form-control" placeholder="Write your general diary entry here..." style="min-height: 200px;">${esc(entry?.text||'')}</textarea></div>
             <div class="modal-footer">
@@ -1175,11 +1334,11 @@ function renderTable() {
     list.map((c, idx) => {
         const s = getStatus(c.nextContact);
         const lastNote = c.notes && c.notes.length > 0
-            ? [...c.notes].sort((a,b) => new Date(b.date+'T00:00:00') - new Date(a.date+'T00:00:00'))[0].text
+            ? [...c.notes].sort(byDateDesc)[0].text
             : '—';
         return `<tr class="${s.diff<0?'overdue-row':''}">
             <td style="text-align:center; color:var(--text-muted); font-size:13px;">${idx + 1}</td>
-            <td><span class="contact-name" data-id="${c.id}">${esc(c.name)}</span></td>
+            <td><span class="contact-name" data-id="${esc(c.id)}">${esc(c.name)}</span></td>
             <td><span class="institution-text">${esc(c.institution||'—')}</span></td>
             <td><span class="institution-text">${esc(c.region||'—')}</span></td>
             <td>${fmtDate(c.lastContact)}</td>
@@ -1187,7 +1346,7 @@ function renderTable() {
             <td><span class="status-badge ${s.cls}">${s.label}</span></td>
             <td class="notes-cell" title="${esc(lastNote)}">${esc(lastNote)}</td>
             <td><div class="action-btns">
-                <button class="btn-icon delete delete-btn" data-id="${c.id}">Delete</button>
+                <button class="btn-icon delete delete-btn" data-id="${esc(c.id)}">Delete</button>
             </div></td>
         </tr>`;
     }).join('') + '</tbody></table>';
@@ -1252,9 +1411,9 @@ function openModal(editId) {
             
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div class="form-group"><label>Last Contact Date <span style="color:var(--danger)">*</span></label>
-                    <input type="date" id="f-last" class="form-control" value="${c?.lastContact||today()}"></div>
+                    <input type="date" id="f-last" class="form-control" value="${esc(c?.lastContact||today())}"></div>
                 <div class="form-group"><label>Next Contact Date <span style="color:var(--danger)">*</span></label>
-                    <input type="date" id="f-next" class="form-control" value="${c?.nextContact||addDays(today(), 28)}"></div>
+                    <input type="date" id="f-next" class="form-control" value="${esc(c?.nextContact||addDays(today(), 28))}"></div>
             </div>
 
             <div class="notes-log">
@@ -1290,7 +1449,7 @@ function openModal(editId) {
     // Notes Logic
     const renderedNotes = [...notes];
     const updateNotesUI = () => {
-        renderedNotes.sort((a, b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
+        renderedNotes.sort(byDateDesc);
         document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
             <div class="note-entry">
                 <span class="note-date" data-index="${i}">${fmtDate(n.date)}</span>
@@ -1410,7 +1569,13 @@ function openModal(editId) {
 
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-renderLogin();
+// Refuse to run inside another website's frame, so a hostile page can't overlay it and
+// trick clicks or keystrokes. (A meta-tag CSP can't do this; browsers ignore frame-ancestors there.)
+if (window.top !== window.self) {
+    document.getElementById('root').textContent = 'For your security, Personal CRM can\'t be opened inside another website. Open it directly.';
+} else {
+    renderLogin();
+}
 </script>
 </body>
 </html>
