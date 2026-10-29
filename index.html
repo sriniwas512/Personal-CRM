@@ -80,8 +80,8 @@
         .contacts-wrapper { background: var(--card); border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.2); overflow: hidden; border: 1px solid var(--border); }
         .table-scroll { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; min-width: 780px; }
-        thead th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border); white-space: nowrap; }
-        tbody td { padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; color: var(--text); }
+        thead th { padding: 12px 12px; text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border); white-space: nowrap; }
+        tbody td { padding: 13px 12px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; color: var(--text); }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover td { background: rgba(255,255,255,0.02); }
         tbody tr.overdue-row td { background: rgba(247, 118, 142, 0.05); }
@@ -93,7 +93,7 @@
         .status-overdue { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
         .status-due-soon { background: rgba(224, 175, 104, 0.15); color: #e0af68; }
         .status-upcoming { background: rgba(158, 206, 106, 0.15); color: var(--success); }
-        .notes-cell { max-width: 220px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
+        .notes-cell { max-width: 180px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
         .action-btns { display: flex; gap: 6px; }
         .empty-state { text-align: center; padding: 70px 20px; color: var(--text-muted); }
         .empty-state .icon { font-size: 52px; margin-bottom: 14px; }
@@ -138,11 +138,33 @@
         .search-input { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; min-width: 160px; }
         .btn-download { background: rgba(187, 154, 247, 0.1); color: #bb9af7; border: 1px solid rgba(187, 154, 247, 0.3); }
         .btn-download:hover { background: rgba(187, 154, 247, 0.2); border-color: #bb9af7; }
-        th.sortable { cursor: pointer; transition: background 0.2s; position: relative; padding-right: 25px; }
+        th.sortable, span.sortable { cursor: pointer; transition: background 0.2s; position: relative; padding-right: 25px; }
         th.sortable:hover { background: rgba(255,255,255,0.05) !important; }
+        span.sortable { position: relative; padding-right: 14px; }
+        span.sortable::after { content: '↕'; position: absolute; right: 2px; opacity: 0.3; font-size: 10px; }
+        span.sortable.asc::after { content: '↑'; opacity: 1; color: var(--primary); }
+        span.sortable.desc::after { content: '↓'; opacity: 1; color: var(--primary); }
         th.sortable::after { content: '↕'; position: absolute; right: 8px; opacity: 0.3; font-size: 10px; }
         th.sortable.asc::after { content: '↑'; opacity: 1; color: var(--primary); }
         th.sortable.desc::after { content: '↓'; opacity: 1; color: var(--primary); }
+
+        /* TYPE + REMINDERS */
+        .type-pill { display: inline-flex; margin-top: 4px; padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .type-professional { background: rgba(122, 162, 247, 0.12); color: var(--primary); }
+        .type-personal { background: rgba(187, 154, 247, 0.12); color: #bb9af7; }
+        .rem-chip { display: inline-flex; padding: 3px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; background: rgba(224, 175, 104, 0.12); color: #e0af68; }
+        .rem-chip.overdue { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
+        tr.rem-done td { opacity: .45; }
+        tr.rem-done .rem-text { text-decoration: line-through; }
+        .day-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
+        .day-chip { background: var(--input-bg); color: var(--text-muted); border: 1px solid var(--border); border-radius: 14px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+        .day-chip:hover { border-color: var(--primary); color: var(--primary); }
+        .rem-entry { display: flex; gap: 10px; align-items: center; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
+        .rem-entry .when { color: #e0af68; font-weight: 700; white-space: nowrap; }
+        .rem-entry .what { flex: 1; white-space: pre-wrap; word-break: break-word; }
+        .rem-entry .rem-del { color: var(--text-muted); cursor: pointer; font-size: 16px; opacity: .5; }
+        .rem-entry .rem-del:hover { color: var(--danger); opacity: 1; }
+        .add-rem-box { display: grid; grid-template-columns: 1fr 110px; gap: 8px; margin-bottom: 8px; }
 
         /* TODO GRID */
         .todo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: start; }
@@ -216,13 +238,17 @@ async function decrypt(secret, b64) {
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let token = '';
 let username = '';
-let currentTab = 'professional';
-let contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
+let currentTab = 'contacts';
+// Contacts are stored in two lists (professional / personal) and shown together in one tab.
+// Keeping the stored lists means older copies of the app can still read the data safely.
+const emptyData = () => ({ personal:[], professional:[], notesDiary:[], todos:[], reminders:[] });
+let contacts = emptyData();
 
 // Filtering/Sorting State
 let searchQuery = '';
 let selectedInstitution = 'All';
 let selectedRegion = 'All';
+let selectedType = 'All';
 let todoFilterDay = 'All';
 let todoFilterMonth = 'All';
 let todoFilterYear = 'All';
@@ -283,6 +309,7 @@ let gistId = null;
 // Ids end up inside HTML attributes, so only allow plain characters. Dates are calendar days.
 const ID_RE   = /^[A-Za-z0-9_-]{1,64}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 
 // ── GITHUB API ────────────────────────────────────────────────────────────────
@@ -402,13 +429,22 @@ function sanitizeData(parsed) {
             ? t.items.map(obj).map(i => ({ text: str(i.text), done: bool(i.done) }))
             : []
     });
+    const sanitizeReminder = (r) => ({
+        id:        id(r.id),
+        date:      date(r.date),
+        time:      typeof r.time === 'string' && TIME_RE.test(r.time) ? r.time : '',
+        text:      str(r.text),
+        contactId: typeof r.contactId === 'string' && ID_RE.test(r.contactId) ? r.contactId : '',
+        done:      bool(r.done)
+    });
     const list = (v) => (Array.isArray(v) ? v : []).map(obj);
 
     return {
         personal:     list(parsed.personal).map(sanitizeContact),
         professional: list(parsed.professional).map(sanitizeContact),
         notesDiary:   list(parsed.notesDiary).map(sanitizeNote),
-        todos:        list(parsed.todos).map(sanitizeTodo)
+        todos:        list(parsed.todos).map(sanitizeTodo),
+        reminders:    list(parsed.reminders).map(sanitizeReminder)
     };
 }
 
@@ -599,7 +635,7 @@ function getStatus(next) {
 function sortContacts(list) {
     return [...list].sort((a, b) => {
         let vA, vB;
-        if (['name', 'institution', 'region'].includes(sortConfig.key)) {
+        if (['name', 'institution', 'region', '_cat'].includes(sortConfig.key)) {
             vA = (a[sortConfig.key] || '').toLowerCase();
             vB = (b[sortConfig.key] || '').toLowerCase();
         } else {
@@ -629,7 +665,36 @@ function wireTextarea(el) {
     });
 }
 function esc(s)  { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function overdueCount(tab) { return (contacts[tab] || []).filter(c => c.nextContact && getStatus(c.nextContact).diff < 0).length; }
+const TYPES = { professional: 'Professional', personal: 'Personal' };
+// Both contact lists as one, each copy tagged with its type (_cat). The copies are for display only.
+function contactRows() {
+    return Object.keys(TYPES).flatMap(cat => (contacts[cat] || []).map(c => ({ ...c, _cat: cat })));
+}
+function findContact(id) {
+    for (const cat of Object.keys(TYPES)) {
+        const c = (contacts[cat] || []).find(x => x.id === id);
+        if (c) return { c, cat };
+    }
+    return null;
+}
+function overdueCount() { return contactRows().filter(c => c.nextContact && getStatus(c.nextContact).diff < 0).length; }
+
+// ── REMINDERS ─────────────────────────────────────────────────────────────────
+// A reminder is a date, an optional time (Singapore time) and a message, optionally linked to a contact.
+const reminderKey = r => r.date + ' ' + (r.time || '99:99'); // undated-time reminders sort after timed ones that day
+function dueReminderCount() { const t = today(); return (contacts.reminders || []).filter(r => !r.done && r.date && r.date <= t).length; }
+function nextReminderFor(contactId) {
+    return (contacts.reminders || []).filter(r => r.contactId === contactId && !r.done && r.date)
+        .sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)))[0] || null;
+}
+function fmtShortDate(d) { return d ? new Date(dayMs(d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '—'; }
+function fmtReminderWhen(r) { return fmtDate(r.date) + (r.time ? ', ' + r.time : ''); }
+// The next given weekday (0 = Sunday) strictly after today, in Singapore.
+function nextWeekday(dow) {
+    const t = today();
+    const cur = new Date(dayMs(t)).getUTCDay();
+    return addDays(t, ((dow - cur + 7) % 7) || 7);
+}
 
 // ── TO DO ─────────────────────────────────────────────────────────────────────
 function renderTodosGrid() {
@@ -806,19 +871,26 @@ function openTodoModal() {
 
 function downloadMarkdown() {
     let md = `# Personal CRM Export - ${today()}\n\n`;
-    ['professional', 'personal'].forEach(tab => {
-        md += `## ${tab.charAt(0).toUpperCase() + tab.slice(1)} Contacts\n\n`;
-        contacts[tab].forEach(c => {
-            md += `### ${c.name}\n- **Institution**: ${c.institution || '—'}\n- **Region**: ${c.region || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
-            if (c.notes && c.notes.length > 0) {
-                md += `- **Notes Log**:\n`;
-                c.notes.forEach(n => {
-                    md += `    - [${fmtDate(n.date)}] ${n.text.replace(/\n/g, ' ')}\n`;
-                });
-            }
-            md += `\n`;
-        });
+    md += `## Contacts\n\n`;
+    contactRows().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+        md += `### ${c.name}\n- **Type**: ${TYPES[c._cat]}\n- **Institution**: ${c.institution || '—'}\n- **Region**: ${c.region || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
+        if (c.notes && c.notes.length > 0) {
+            md += `- **Notes Log**:\n`;
+            c.notes.forEach(n => {
+                md += `    - [${fmtDate(n.date)}] ${n.text.replace(/\n/g, ' ')}\n`;
+            });
+        }
+        md += `\n`;
     });
+
+    if (contacts.reminders && contacts.reminders.length > 0) {
+        md += `---\n\n## Reminders\n\n`;
+        [...contacts.reminders].sort((a, b) => reminderKey(a).localeCompare(reminderKey(b))).forEach(r => {
+            const who = r.contactId && findContact(r.contactId);
+            md += `- [${r.done ? 'x' : ' '}] ${fmtReminderWhen(r)} — ${r.text.replace(/\n/g, ' ')}${who ? ` (${who.c.name})` : ''}\n`;
+        });
+        md += `\n`;
+    }
     
     if (contacts.notesDiary && contacts.notesDiary.length > 0) {
         md += `--- \n\n## General Notes Diary\n\n`;
@@ -849,12 +921,65 @@ function downloadMarkdown() {
     URL.revokeObjectURL(url);
 }
 
+// ── CALENDAR FILE ─────────────────────────────────────────────────────────────
+// Downloads an .ics file of upcoming Next Contact dates and open reminders that Google, Apple or
+// Outlook Calendar can import. It's a snapshot: download it again after making changes. Each event
+// has a fixed id, so calendars that support it update existing events instead of duplicating them.
+function exportCalendar() {
+    const t = today();
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const text = v => String(v).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+    const day = d => d.replace(/-/g, '');
+    // Reminder times are Singapore time; written as UTC so every calendar shows them at the right moment.
+    const utc = (d, tm, plusMin = 0) => new Date(Date.parse(`${d}T${tm}:00+08:00`) + plusMin * 60000).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    // Lines longer than 75 bytes must be folded, per the calendar file standard.
+    const enc = new TextEncoder();
+    const fold = line => {
+        const out = []; let cur = '';
+        for (const ch of line) {
+            if (enc.encode(cur + ch).length > 75) { out.push(cur); cur = ' ' + ch; } else cur += ch;
+        }
+        out.push(cur);
+        return out.join('\r\n');
+    };
+    const events = [];
+    const event = (uid, when, summary, description, alarm) => events.push(
+        'BEGIN:VEVENT', `UID:${uid}@personal-crm`, `DTSTAMP:${stamp}`, ...when,
+        `SUMMARY:${text(summary)}`, ...(description ? [`DESCRIPTION:${text(description)}`] : []),
+        'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${text(summary)}`, `TRIGGER:${alarm}`, 'END:VALARM',
+        'END:VEVENT');
+    const allDay = d => [`DTSTART;VALUE=DATE:${day(d)}`, `DTEND;VALUE=DATE:${day(addDays(d, 1))}`];
+
+    contactRows().filter(c => c.nextContact && c.nextContact >= t).forEach(c => {
+        const where = [c.institution, c.region].filter(Boolean).join(', ');
+        event(`next-${c.id}`, allDay(c.nextContact), `Get in touch: ${c.name}`, where, 'PT9H'); // alert at 9 am that day
+    });
+    (contacts.reminders || []).filter(r => !r.done && r.date && r.date >= t).forEach(r => {
+        const who = r.contactId && findContact(r.contactId);
+        const summary = (r.text.split('\n')[0] || 'Reminder') + (who ? ` — ${who.c.name}` : '');
+        if (r.time) event(`rem-${r.id}`, [`DTSTART:${utc(r.date, r.time)}`, `DTEND:${utc(r.date, r.time, 15)}`], summary, r.text, 'PT0S');
+        else        event(`rem-${r.id}`, allDay(r.date), summary, r.text, 'PT9H');
+    });
+
+    const count = events.filter(l => l === 'BEGIN:VEVENT').length;
+    if (!count) { toast('Nothing upcoming to add — no future Next Contact dates or open reminders.', 5000); return; }
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Personal CRM//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+        'X-WR-CALNAME:Personal CRM', ...events, 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crm_calendar_${t}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Calendar file with ${count} event${count === 1 ? '' : 's'} downloaded. Open it to add them to your calendar. Event titles in your calendar aren't encrypted.`, 7000);
+}
+
 // ── CLAUDE BRIDGE ─────────────────────────────────────────────────────────────
 // Export: a plain JSON copy of your data that Claude can read and edit.
 // Import: load an edited copy back. It's validated with the same rules as your
 // Gist data, you see what will change, and only then is it encrypted and saved.
 const BRIDGE_FORMAT = 'personal-crm';
-const BRIDGE_VERSION = 1;
+const BRIDGE_VERSION = 2; // 2 added reminders; older apps refuse version-2 files instead of dropping reminders
 
 function exportForClaude() {
     // basedOn records which saved version this export came from, so an out-of-date file can be caught on import.
@@ -893,11 +1018,15 @@ async function importFromClaude(file) {
         fail('That isn\'t a Personal CRM export. Choose the .json file from "Export for Claude", or one Claude gave you.'); return;
     }
     if (raw.version > BRIDGE_VERSION) { fail('This file was made by a newer version of the app. Update the app and try again.'); return; }
+    // Files exported before reminders existed have no reminders section; keep the current reminders for those.
+    const hasReminders = raw.data.reminders !== undefined;
+    if (hasReminders && !Array.isArray(raw.data.reminders)) { fail('That file has data the app can\'t accept, so nothing was imported.'); return; }
+    const idSections = [...SECTIONS, ...(hasReminders ? ['reminders'] : [])];
 
     // Every record needs a unique, plain id (letters, digits, - and _), or changes can't be matched
     // up reliably. Plain ids also mean nothing in the file can sneak code into the page.
-    for (const k of SECTIONS) {
-        const ids = raw.data[k].map(x => x && x.id);
+    for (const k of [...idSections, 'allContacts']) {
+        const ids = (k === 'allContacts' ? [...raw.data.professional, ...raw.data.personal] : raw.data[k]).map(x => x && x.id);
         if (ids.some(id => typeof id !== 'string' || !ID_RE.test(id)) || new Set(ids).size !== ids.length) {
             fail('Some records in that file have a missing, invalid or shared id, so nothing was imported.'); return;
         }
@@ -909,9 +1038,13 @@ async function importFromClaude(file) {
         ...raw.data.personal.flatMap(contactDates),
         ...raw.data.notesDiary.map(n => n && n.date),
         ...raw.data.todos.map(t => t && t.date),
+        ...(hasReminders ? raw.data.reminders.map(r => r && r.date) : []),
     ];
     if (allDates.some(d => d != null && d !== '' && !(typeof d === 'string' && DATE_RE.test(d)))) {
         fail('Some dates in that file aren\'t written as YYYY-MM-DD, so nothing was imported.'); return;
+    }
+    if (hasReminders && raw.data.reminders.some(r => r && r.time != null && r.time !== '' && !(typeof r.time === 'string' && TIME_RE.test(r.time)))) {
+        fail('Some reminder times in that file aren\'t written as HH:MM (24-hour), so nothing was imported.'); return;
     }
     try { next = sanitizeData(raw.data); }
     catch { fail('That file has data the app can\'t accept, so nothing was imported.'); return; }
@@ -924,10 +1057,14 @@ async function importFromClaude(file) {
 
     // Compare against a normalised copy of the current data so only real differences show.
     const current = sanitizeData(JSON.parse(JSON.stringify(contacts)));
-    const name = x => x.name || x.title || fmtDate(x.date);
+    if (!hasReminders) next.reminders = current.reminders;
+    const name = x => x.name || x.title || x.text || fmtDate(x.date);
+    // Contacts are compared as one list (tagged with their type), so moving one between
+    // Professional and Personal shows as an update rather than a delete plus an add.
+    const tagged = d => Object.keys(TYPES).flatMap(cat => d[cat].map(c => ({ ...c, _cat: cat })));
     const diffs = [
-        diffList(current.professional, next.professional, 'Professional contacts'),
-        diffList(current.personal, next.personal, 'Personal contacts'),
+        diffList(tagged(current), tagged(next), 'Contacts'),
+        diffList(current.reminders, next.reminders, 'Reminders'),
         diffList(current.notesDiary, next.notesDiary, 'Diary entries'),
         diffList(current.todos, next.todos, 'To do cards'),
     ];
@@ -938,7 +1075,7 @@ async function importFromClaude(file) {
     const removed = diffs.flatMap(d => d.removed.map(x => ({ x, label: d.label })));
     const needsTick = stale || removed.length > 0;
     const names = (arr, verb) => arr.length ? `<div><b>${verb}:</b> ${arr.slice(0, 12).map(x => esc(name(x))).join(', ')}${arr.length > 12 ? ` and ${arr.length - 12} more` : ''}</div>` : '';
-    const contactDiffs = diffs.slice(0, 2);
+    const contactDiffs = diffs.slice(0, 1);
 
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="mo-import">
@@ -1045,7 +1182,7 @@ async function handleLogin(tok) {
                 handleLogout('Login cancelled. Please try your original token.');
                 return;
             }
-            contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
+            contacts = emptyData();
         }
         renderApp();
     } catch (e) {
@@ -1065,7 +1202,7 @@ function handleLogout(msg = '') {
     username = '';
     // Drop all references so the browser can discard the decrypted data. (JavaScript can't
     // overwrite strings in memory, so this is the most a web page can do.)
-    contacts = { personal:[], professional:[], notesDiary:[], todos:[] };
+    contacts = emptyData();
     gistId = null;
     lastSyncDate = null;
 
@@ -1090,7 +1227,8 @@ function handleLogout(msg = '') {
 
 // ── APP ───────────────────────────────────────────────────────────────────────
 function renderApp() {
-    const po = overdueCount('personal'), bo = overdueCount('professional');
+    const overdue = overdueCount(), due = dueReminderCount();
+    const TITLES = { contacts: ['Contacts', '+ Add Contact'], reminders: ['Reminders', '+ Add Reminder'], todos: ['To Do List', '+ Add Card'], notes: ['Notes Diary', '+ Add Entry'] };
     document.getElementById('root').innerHTML = `
     <header class="app-header">
         <div style="display:flex; flex-direction:column;">
@@ -1100,6 +1238,7 @@ function renderApp() {
         <span class="user-pill">@${esc(username)}</span>
         <div class="header-right">
             <span id="sync-badge" class="sync-badge sync-ok">✓ Synced</span>
+            <button class="btn-sm" id="cal-btn" title="Download upcoming Next Contact dates and reminders for Google / Apple Calendar">📅 Add to calendar</button>
             <button class="btn btn-sm btn-download" id="dl-btn">Download .md</button>
             <button class="btn-sm" id="claude-export-btn" title="Download a file Claude can read and edit">Export for Claude</button>
             <button class="btn-sm" id="claude-import-btn" title="Load a file Claude has updated">Import</button>
@@ -1108,30 +1247,36 @@ function renderApp() {
         </div>
     </header>
     <nav class="tabs">
-        <button class="tab-btn ${currentTab==='professional'?'active':''}" data-tab="professional">Professional${bo?`<span class="tab-badge">${bo}</span>`:''}</button>
-        <button class="tab-btn ${currentTab==='personal'?'active':''}" data-tab="personal">Personal${po?`<span class="tab-badge">${po}</span>`:''}</button>
+        <button class="tab-btn ${currentTab==='contacts'?'active':''}" data-tab="contacts">Contacts${overdue?`<span class="tab-badge">${overdue}</span>`:''}</button>
+        <button class="tab-btn ${currentTab==='reminders'?'active':''}" data-tab="reminders">Reminders${due?`<span class="tab-badge">${due}</span>`:''}</button>
         <button class="tab-btn ${currentTab==='todos'?'active':''}" data-tab="todos">To Do</button>
         <button class="tab-btn ${currentTab==='notes'?'active':''}" data-tab="notes">Notes</button>
     </nav>
     <main class="main-content">
         <div class="section-header">
-            <h2 class="section-title">${currentTab==='notes'?'Notes Diary':currentTab==='todos'?'To Do List':(currentTab==='personal'?'Personal':'Professional')+' Contacts'}</h2>
+            <h2 class="section-title">${TITLES[currentTab][0]}</h2>
             <div style="display:flex; gap:10px;">
-                <button class="btn-add" id="add-btn">${currentTab==='notes'?'+ Add Entry':currentTab==='todos'?'+ Add Card':'+ Add Contact'}</button>
+                <button class="btn-add" id="add-btn">${TITLES[currentTab][1]}</button>
             </div>
         </div>
         
-        ${(currentTab === 'personal' || currentTab === 'professional') ? `
+        ${currentTab === 'contacts' ? `
         <div class="filter-bar">
             <div class="filter-group">
                 <span class="filter-label">Search</span>
                 <input type="text" id="search-in" class="search-input" value="${esc(searchQuery)}" placeholder="Name or notes...">
             </div>
             <div class="filter-group">
+                <span class="filter-label">Type</span>
+                <select id="type-filter" class="select-custom">
+                    ${[['All', 'All'], ...Object.entries(TYPES)].map(([v, l]) => `<option value="${v}" ${selectedType===v?'selected':''}>${l}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
                 <span class="filter-label">Institution</span>
                 <select id="inst-filter" class="select-custom">
                     ${(() => {
-                        const insts = ['All', ...[...new Set(contacts[currentTab].map(c => c.institution).filter(Boolean))].sort((a,b) => a.localeCompare(b))];
+                        const insts = ['All', ...[...new Set(contactRows().map(c => c.institution).filter(Boolean))].sort((a,b) => a.localeCompare(b))];
                         return insts.map(i => `<option value="${esc(i)}" ${selectedInstitution===i?'selected':''}>${esc(i)}</option>`).join('');
                     })()}
                 </select>
@@ -1140,7 +1285,7 @@ function renderApp() {
                 <span class="filter-label">Region</span>
                 <select id="region-filter" class="select-custom">
                     ${(() => {
-                        const regs = ['All', ...[...new Set(contacts[currentTab].map(c => c.region).filter(Boolean))].sort((a,b) => a.localeCompare(b))];
+                        const regs = ['All', ...[...new Set(contactRows().map(c => c.region).filter(Boolean))].sort((a,b) => a.localeCompare(b))];
                         return regs.map(r => `<option value="${esc(r)}" ${selectedRegion===r?'selected':''}>${esc(r)}</option>`).join('');
                     })()}
                 </select>
@@ -1176,7 +1321,7 @@ function renderApp() {
 
         ${currentTab==='todos'
             ? `<div id="tbl">${renderTodosGrid()}</div>`
-            : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : renderTable()}</div></div>`
+            : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : currentTab==='reminders' ? renderRemindersTable() : renderTable()}</div></div>`
         }
     </main>`;
 
@@ -1185,8 +1330,9 @@ function renderApp() {
         if (_unsaved && !confirm('Some changes haven\'t been saved to GitHub yet and will be lost if you sign out now. Sign out anyway?')) return;
         handleLogout();
     };
-    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
-    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : openModal(null);
+    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; selectedType = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
+    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : currentTab === 'reminders' ? openReminderModal(null) : openModal(null);
+    document.getElementById('cal-btn').onclick = exportCalendar;
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     document.getElementById('claude-export-btn').onclick = exportForClaude;
     const impFile = document.getElementById('claude-import-file');
@@ -1203,7 +1349,11 @@ function renderApp() {
         if (yf) yf.onchange = e => { todoFilterYear  = e.target.value; refreshTable(); };
     } else if (currentTab === 'notes') {
         attachNotesTableEvents();
+    } else if (currentTab === 'reminders') {
+        attachRemindersEvents();
     } else {
+        const typeF = document.getElementById('type-filter');
+        if (typeF) typeF.onchange = (e) => { selectedType = e.target.value; refreshTable(); };
         const sIn = document.getElementById('search-in');
         if (sIn) sIn.oninput = () => { searchQuery = sIn.value; refreshTable(); };
         const instF = document.getElementById('inst-filter');
@@ -1221,6 +1371,9 @@ function refreshTable() {
     } else if (currentTab === 'notes') {
         document.getElementById('tbl').innerHTML = renderNotesTable();
         attachNotesTableEvents();
+    } else if (currentTab === 'reminders') {
+        document.getElementById('tbl').innerHTML = renderRemindersTable();
+        attachRemindersEvents();
     } else {
         document.getElementById('tbl').innerHTML = renderTable();
         attachTableEvents();
@@ -1304,9 +1457,124 @@ function openNoteModal(editId) {
     };
 }
 
+// ── REMINDERS TAB ─────────────────────────────────────────────────────────────
+// Quick-pick buttons for a reminder's date: Today, Tomorrow, then the next Mon…Sun.
+function dayChipsHtml() {
+    const t = today();
+    const short = d => new Date(dayMs(d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const chips = [['Today', t], ['Tomorrow', addDays(t, 1)],
+        ...[0, 1, 2, 3, 4, 5, 6].map(dow => { const d = nextWeekday(dow); return [`${days[dow]} ${short(d)}`, d]; })
+            .sort((a, b) => a[1].localeCompare(b[1]))];
+    return chips.map(([label, d]) => `<button type="button" class="day-chip" data-date="${d}">${label}</button>`).join('');
+}
+function wireDayChips(container, dateInput) {
+    container.querySelectorAll('.day-chip').forEach(b => b.onclick = () => { dateInput.value = b.dataset.date; });
+}
+
+function renderRemindersTable() {
+    const all = contacts.reminders || [];
+    if (!all.length) return `<div class="empty-state"><div class="icon">⏰</div><p>No reminders yet. Click <strong>+ Add Reminder</strong> — e.g. "Thursday 10:00, message Alice about the proposal".</p></div>`;
+    const t = today();
+    const open = all.filter(r => !r.done).sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)));
+    const done = all.filter(r => r.done).sort((a, b) => reminderKey(b).localeCompare(reminderKey(a)));
+    return `<table><thead><tr>
+        <th style="width:50px; text-align:center;">Done</th>
+        <th style="width:190px;">When (SGT)</th>
+        <th>Reminder</th>
+        <th style="width:180px;">Contact</th>
+        <th style="width:150px;">Actions</th>
+    </tr></thead><tbody>` +
+    [...open, ...done].map(r => {
+        const who = r.contactId && findContact(r.contactId);
+        const status = r.done ? '' : r.date < t ? '<span class="status-badge status-overdue">Overdue</span>' : r.date === t ? '<span class="status-badge status-due-soon">Today</span>' : '';
+        return `<tr class="${r.done ? 'rem-done' : r.date < t ? 'overdue-row' : ''}">
+            <td style="text-align:center;"><input type="checkbox" class="rem-done-cb" data-id="${esc(r.id)}" ${r.done ? 'checked' : ''} style="accent-color:var(--primary); width:16px; height:16px; cursor:pointer;"></td>
+            <td style="white-space:nowrap;">${esc(fmtReminderWhen(r))} ${status}</td>
+            <td><div class="rem-text" style="white-space:pre-wrap;">${esc(r.text)}</div></td>
+            <td>${who ? `<span class="contact-name" data-contact="${esc(who.c.id)}">${esc(who.c.name)}</span>` : '<span class="institution-text">—</span>'}</td>
+            <td><div class="action-btns">
+                <button class="btn-icon edit-rem-btn" data-id="${esc(r.id)}">Edit</button>
+                <button class="btn-icon delete delete-rem-btn" data-id="${esc(r.id)}">Delete</button>
+            </div></td>
+        </tr>`;
+    }).join('') + '</tbody></table>';
+}
+
+function attachRemindersEvents() {
+    document.querySelectorAll('.rem-done-cb').forEach(cb => cb.onchange = () => {
+        const r = contacts.reminders.find(x => x.id === cb.dataset.id);
+        if (!r) return;
+        r.done = cb.checked;
+        refreshTable(); refreshBadges();
+        saveToGist();
+    });
+    document.querySelectorAll('.edit-rem-btn').forEach(b => b.onclick = () => openReminderModal(b.dataset.id));
+    document.querySelectorAll('.delete-rem-btn').forEach(b => b.onclick = () => {
+        if (!confirm('Delete this reminder?')) return;
+        contacts.reminders = contacts.reminders.filter(r => r.id !== b.dataset.id);
+        refreshTable(); refreshBadges();
+        saveToGist();
+        toast('Reminder deleted.');
+    });
+    document.querySelectorAll('.contact-name[data-contact]').forEach(el => el.onclick = () => openModal(el.dataset.contact));
+}
+
+function openReminderModal(editId) {
+    const r = editId ? (contacts.reminders || []).find(x => x.id === editId) : null;
+    const people = contactRows().sort((a, b) => a.name.localeCompare(b.name));
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="mo-rem">
+        <div class="modal" style="max-width:500px">
+            <div class="modal-header"><h3 class="modal-title">${r ? 'Edit' : 'Add'} Reminder</h3><button class="modal-close" id="mr-x">&times;</button></div>
+            <div style="display:grid; grid-template-columns: 1fr 130px; gap: 12px;">
+                <div class="form-group"><label>Date <span style="color:var(--danger)">*</span></label>
+                    <input type="date" id="r-date" class="form-control" value="${esc(r?.date || today())}"></div>
+                <div class="form-group"><label>Time (SGT)</label>
+                    <input type="time" id="r-time" class="form-control" value="${esc(r?.time || '')}"></div>
+            </div>
+            <div class="day-chips" id="r-chips">${dayChipsHtml()}</div>
+            <div class="form-group"><label>Reminder <span style="color:var(--danger)">*</span></label>
+                <textarea id="r-text" class="form-control" placeholder="e.g. Send Alice a message about the proposal">${esc(r?.text || '')}</textarea></div>
+            <div class="form-group"><label>Contact <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                <select id="r-contact" class="form-control">
+                    <option value="">— None —</option>
+                    ${people.map(p => `<option value="${esc(p.id)}" ${r?.contactId === p.id ? 'selected' : ''}>${esc(p.name)}${p.institution ? ' · ' + esc(p.institution) : ''}</option>`).join('')}
+                </select></div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" id="mr-cancel">Cancel</button>
+                <button class="btn btn-primary" id="mr-save" style="width:auto">${r ? 'Save Reminder' : 'Add Reminder'}</button>
+            </div>
+        </div>
+    </div>`);
+    wireTextarea(document.getElementById('r-text'));
+    wireDayChips(document.getElementById('r-chips'), document.getElementById('r-date'));
+    const close = () => { const m = document.getElementById('mo-rem'); if (m) m.remove(); };
+    document.getElementById('mr-x').onclick = close;
+    document.getElementById('mr-cancel').onclick = close;
+    document.getElementById('mo-rem').onclick = e => { if (e.target.id === 'mo-rem') close(); };
+    document.getElementById('mr-save').onclick = () => {
+        const date = document.getElementById('r-date').value;
+        const time = document.getElementById('r-time').value;
+        const text = document.getElementById('r-text').value.trim();
+        const contactId = document.getElementById('r-contact').value;
+        if (!date) { alert('Please pick a date.'); return; }
+        if (!text) { alert('Please write what the reminder is for.'); return; }
+        const data = { id: r?.id || genId(), date, time, text, contactId, done: r?.done || false };
+        if (!contacts.reminders) contacts.reminders = [];
+        const i = contacts.reminders.findIndex(x => x.id === data.id);
+        if (i !== -1) contacts.reminders[i] = data; else contacts.reminders.push(data);
+        close();
+        refreshTable(); refreshBadges();
+        saveToGist();
+        toast(r ? 'Reminder updated.' : 'Reminder added.');
+    };
+    document.getElementById('r-text').focus();
+}
+
 // ── TABLE ─────────────────────────────────────────────────────────────────────
 function renderTable() {
-    let list = contacts[currentTab].filter(c => {
+    let list = contactRows().filter(c => {
         const matchesSearch = !searchQuery || 
             (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
             (c.institution && c.institution.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -1314,7 +1582,8 @@ function renderTable() {
             (c.notes && c.notes.some(n => n.text.toLowerCase().includes(searchQuery.toLowerCase())));
         const matchesInst = selectedInstitution === 'All' || c.institution === selectedInstitution;
         const matchesReg = selectedRegion === 'All' || c.region === selectedRegion;
-        return matchesSearch && matchesInst && matchesReg;
+        const matchesType = selectedType === 'All' || c._cat === selectedType;
+        return matchesSearch && matchesInst && matchesReg && matchesType;
     });
     list = sortContacts(list);
 
@@ -1325,35 +1594,35 @@ function renderTable() {
     return `<table><thead><tr>
         <th style="width:40px; text-align:center;">#</th>
         <th class="${sortCls('name')}" data-sort="name">Name</th>
-        <th class="${sortCls('institution')}" data-sort="institution">Institution / Company</th>
-        <th class="${sortCls('region')}" data-sort="region">Region</th>
+        <th><span class="${sortCls('institution')}" data-sort="institution">Institution</span> / <span class="${sortCls('region')}" data-sort="region">Region</span></th>
         <th class="${sortCls('lastContact')}" data-sort="lastContact">Last Contact</th>
         <th class="${sortCls('nextContact')}" data-sort="nextContact">Next Contact</th>
-        <th>Status</th><th>Latest Note</th><th>Actions</th>
+        <th>Status</th><th>Next Reminder</th><th>Latest Note</th><th></th>
     </tr></thead><tbody>` +
     list.map((c, idx) => {
         const s = getStatus(c.nextContact);
         const lastNote = c.notes && c.notes.length > 0
             ? [...c.notes].sort(byDateDesc)[0].text
             : '—';
+        const rem = nextReminderFor(c.id);
         return `<tr class="${s.diff<0?'overdue-row':''}">
             <td style="text-align:center; color:var(--text-muted); font-size:13px;">${idx + 1}</td>
-            <td><span class="contact-name" data-id="${esc(c.id)}">${esc(c.name)}</span></td>
-            <td><span class="institution-text">${esc(c.institution||'—')}</span></td>
-            <td><span class="institution-text">${esc(c.region||'—')}</span></td>
+            <td><span class="contact-name" data-id="${esc(c.id)}">${esc(c.name)}</span><br><span class="type-pill type-${c._cat}">${TYPES[c._cat]}</span></td>
+            <td><span class="institution-text">${esc(c.institution||'—')}</span>${c.region ? `<br><span class="institution-text" style="font-size:12px;">📍 ${esc(c.region)}</span>` : ''}</td>
             <td>${fmtDate(c.lastContact)}</td>
             <td>${fmtDate(c.nextContact)}</td>
             <td><span class="status-badge ${s.cls}">${s.label}</span></td>
+            <td>${rem ? `<span class="rem-chip${rem.date < today() ? ' overdue' : ''}" title="${esc(fmtReminderWhen(rem) + ' — ' + rem.text)}">⏰ ${esc(fmtShortDate(rem.date) + (rem.time ? ', ' + rem.time : ''))}</span>` : '<span class="institution-text">—</span>'}</td>
             <td class="notes-cell" title="${esc(lastNote)}">${esc(lastNote)}</td>
             <td><div class="action-btns">
-                <button class="btn-icon delete delete-btn" data-id="${esc(c.id)}">Delete</button>
+                <button class="btn-icon delete delete-btn" data-id="${esc(c.id)}" title="Delete contact" aria-label="Delete contact">🗑</button>
             </div></td>
         </tr>`;
     }).join('') + '</tbody></table>';
 }
 
 function attachTableEvents() {
-    document.querySelectorAll('th.sortable').forEach(th => th.onclick = () => {
+    document.querySelectorAll('.sortable[data-sort]').forEach(th => th.onclick = () => {
         const key = th.dataset.sort;
         if (sortConfig.key === key) {
             sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
@@ -1365,13 +1634,16 @@ function attachTableEvents() {
     });
     document.querySelectorAll('.contact-name[data-id]').forEach(el => el.onclick = () => openModal(el.dataset.id));
     document.querySelectorAll('.delete-btn').forEach(b => b.onclick = async () => {
-        if (!confirm('Are you sure you want to delete this contact? This action cannot be undone.')) return;
+        const linked = (contacts.reminders || []).filter(r => r.contactId === b.dataset.id).length;
+        if (!confirm('Are you sure you want to delete this contact?' + (linked ? ` Their ${linked} reminder${linked === 1 ? '' : 's'} will be deleted too.` : '') + ' This action cannot be undone.')) return;
         
         if (confirm('Would you like to download your data as a .md file before deleting?')) {
             downloadMarkdown();
         }
         
-        contacts[currentTab] = contacts[currentTab].filter(c => c.id !== b.dataset.id);
+        const found = findContact(b.dataset.id);
+        if (found) contacts[found.cat] = contacts[found.cat].filter(c => c.id !== b.dataset.id);
+        contacts.reminders = (contacts.reminders || []).filter(r => r.contactId !== b.dataset.id);
         saveToGist();
         document.getElementById('tbl').innerHTML = renderTable();
         attachTableEvents();
@@ -1383,8 +1655,8 @@ function attachTableEvents() {
 function refreshBadges() {
     document.querySelectorAll('.tab-btn').forEach(b => {
         const tab = b.dataset.tab;
-        if (tab === 'notes') return;
-        const n = overdueCount(tab), ex = b.querySelector('.tab-badge');
+        if (tab !== 'contacts' && tab !== 'reminders') return;
+        const n = tab === 'contacts' ? overdueCount() : dueReminderCount(), ex = b.querySelector('.tab-badge');
         if (n > 0) { if (ex) ex.textContent=n; else b.insertAdjacentHTML('beforeend',`<span class="tab-badge">${n}</span>`); }
         else if (ex) ex.remove();
     });
@@ -1392,8 +1664,11 @@ function refreshBadges() {
 
 // ── CONTACT MODAL ─────────────────────────────────────────────────────────────
 function openModal(editId) {
-    const c = editId ? contacts[currentTab].find(x => x.id===editId) : null;
+    const found = editId ? findContact(editId) : null;
+    const c = found ? found.c : null;
     const notes = c?.notes || [];
+    const contactId = c?.id || genId(); // known up front so reminders added here can link to a new contact
+    const startType = found ? found.cat : (selectedType !== 'All' ? selectedType : 'professional');
     
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="mo">
@@ -1409,11 +1684,29 @@ function openModal(editId) {
                     <input type="text" id="f-reg" class="form-control" value="${esc(c?.region||'')}" placeholder="e.g. Asia, EU, US…"></div>
             </div>
             
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                <div class="form-group"><label>Type</label>
+                    <select id="f-type" class="form-control">
+                        ${Object.entries(TYPES).map(([v, l]) => `<option value="${v}" ${startType === v ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select></div>
                 <div class="form-group"><label>Last Contact Date <span style="color:var(--danger)">*</span></label>
                     <input type="date" id="f-last" class="form-control" value="${esc(c?.lastContact||today())}"></div>
                 <div class="form-group"><label>Next Contact Date <span style="color:var(--danger)">*</span></label>
                     <input type="date" id="f-next" class="form-control" value="${esc(c?.nextContact||addDays(today(), 28))}"></div>
+            </div>
+
+            <div class="notes-log">
+                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:12px; color:var(--text-muted);">Reminders</label>
+                <div class="add-rem-box">
+                    <input type="date" id="new-rem-date" class="form-control" value="${today()}">
+                    <input type="time" id="new-rem-time" class="form-control" title="Time (SGT), optional">
+                </div>
+                <div class="day-chips" id="new-rem-chips" style="margin:0 0 8px;">${dayChipsHtml()}</div>
+                <div class="add-note-box" style="margin-bottom:12px;">
+                    <input type="text" id="new-rem-text" class="form-control" placeholder="e.g. Send a message about the proposal">
+                    <button class="btn btn-add" id="add-rem-btn" style="height: fit-content;">Add</button>
+                </div>
+                <div id="rem-list"></div>
             </div>
 
             <div class="notes-log">
@@ -1444,8 +1737,8 @@ function openModal(editId) {
     const close = () => { document.getElementById('mo').remove(); };
     // Closing without saving discards edits, so ask first if anything changed.
     const formState = () => JSON.stringify([
-        ...['f-name', 'f-inst', 'f-reg', 'f-last', 'f-next', 'new-note-text'].map(id => document.getElementById(id).value),
-        renderedNotes
+        ...['f-name', 'f-inst', 'f-reg', 'f-type', 'f-last', 'f-next', 'new-note-text', 'new-rem-text'].map(id => document.getElementById(id).value),
+        renderedNotes, modalReminders
     ]);
     let initialState;
     const cancel = () => {
@@ -1460,6 +1753,38 @@ function openModal(editId) {
     // Work on copies: editing the originals would change the contact even if the pop-up is cancelled,
     // and the next unrelated save would then send that "cancelled" edit to GitHub.
     const renderedNotes = notes.map(n => ({ ...n }));
+
+    // Reminders for this contact, also edited as copies and only stored on Save Contact.
+    const modalReminders = (contacts.reminders || []).filter(r => r.contactId === contactId).map(r => ({ ...r }));
+    const updateRemindersUI = () => {
+        modalReminders.sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)));
+        document.getElementById('rem-list').innerHTML = modalReminders.map((r, i) => `
+            <div class="rem-entry" style="${r.done ? 'opacity:.45' : ''}">
+                <span class="when">⏰ ${esc(fmtReminderWhen(r))}</span>
+                <span class="what" style="${r.done ? 'text-decoration:line-through' : ''}">${esc(r.text)}</span>
+                <span class="rem-del" data-index="${i}" title="Delete reminder">&times;</span>
+            </div>`).join('');
+        document.querySelectorAll('#rem-list .rem-del').forEach(el => el.onclick = () => {
+            modalReminders.splice(parseInt(el.dataset.index), 1);
+            updateRemindersUI();
+        });
+    };
+    // Adds the reminder typed in the boxes; returns false if something required is missing.
+    const addPendingReminder = () => {
+        const text = document.getElementById('new-rem-text').value.trim();
+        const date = document.getElementById('new-rem-date').value;
+        if (!text) return true;
+        if (!date) { alert('Please pick a date for the reminder.'); return false; }
+        modalReminders.push({ id: genId(), date, time: document.getElementById('new-rem-time').value, text, contactId, done: false });
+        document.getElementById('new-rem-text').value = '';
+        document.getElementById('new-rem-time').value = '';
+        updateRemindersUI();
+        return true;
+    };
+    wireDayChips(document.getElementById('new-rem-chips'), document.getElementById('new-rem-date'));
+    document.getElementById('add-rem-btn').onclick = addPendingReminder;
+    document.getElementById('new-rem-text').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addPendingReminder(); } };
+    updateRemindersUI();
     const newestNoteDate = () => renderedNotes.reduce((m, n) => (n.date > m ? n.date : m), '');
     // Keep Last Contact in step with the newest note: if it came from the newest note, it follows
     // that note when its date changes or it's deleted, and a newer note always moves it forward.
@@ -1559,7 +1884,9 @@ function openModal(editId) {
         const name = document.getElementById('f-name').value.trim();
         const inst = document.getElementById('f-inst').value.trim();
         const reg  = document.getElementById('f-reg').value.trim();
+        const type = document.getElementById('f-type').value;
         if (!name) { alert('Please enter a name.'); return; }
+        if (!addPendingReminder()) return; // a reminder typed but not yet added counts as added
 
         // A note typed but not yet added counts as added, and moves the dates the same way.
         const pendingNote = document.getElementById('new-note-text').value.trim();
@@ -1577,23 +1904,26 @@ function openModal(editId) {
         if (!next) { alert('Please enter the next contact date.'); return; }
         
         const contactData = { 
-            id: c?.id || genId(), 
+            id: contactId,
             name, institution: inst, region: reg,
             lastContact: last, nextContact: next, 
             notes: renderedNotes 
         };
 
-        if (editId) {
-            const i = contacts[currentTab].findIndex(x => x.id===editId);
-            if (i !== -1) contacts[currentTab][i] = contactData;
+        // Replace in place, or move to the other list if the type changed.
+        const where = findContact(contactId);
+        if (where && where.cat === type) {
+            const i = contacts[type].findIndex(x => x.id === contactId);
+            contacts[type][i] = contactData;
         } else {
-            contacts[currentTab].push(contactData);
+            if (where) contacts[where.cat] = contacts[where.cat].filter(x => x.id !== contactId);
+            contacts[type].push(contactData);
         }
-        
+        contacts.reminders = (contacts.reminders || []).filter(r => r.contactId !== contactId).concat(modalReminders);
+
         close();
         saveToGist();
-        document.getElementById('tbl').innerHTML = renderTable();
-        attachTableEvents();
+        refreshTable();
         refreshBadges();
         toast(editId ? 'Contact updated.' : 'Contact added.');
     };

@@ -23,11 +23,13 @@ There is no backend. The app is a single HTML file.
 ## Features
 
 - **Encrypted sync** — AES-256-GCM encryption with PBKDF2 key derivation (200k iterations). Data is encrypted before it leaves your browser.
-- **Contacts management** — Separate tabs for personal and professional contacts with dated note logs, inline editing, and "next contact" reminders.
+- **Contacts management** — One Contacts tab. Each contact is labelled Professional or Personal (filter by type, or change it in the contact's pop-up), with a dated note log and a "next contact" date. Last Contact follows the newest note automatically.
+- **Reminders** — Reminders with a date, an optional time (Singapore time) and a message, optionally linked to a contact — e.g. "Thursday 10:00, message Alice about the proposal". Add them in the Reminders tab or in a contact's pop-up, with one-click Today / Tomorrow / Mon–Sun buttons. Each contact's next reminder shows in the table, and the Reminders tab shows a badge for reminders due today or overdue.
+- **Add to calendar** — Downloads a calendar file (`.ics`) of upcoming Next Contact dates (all-day, alert at 9 am) and open reminders (at their Singapore time, with an alert) for Google, Apple or Outlook Calendar. It's a snapshot: download it again after changes. Events keep the same ids, so calendars that support it update them instead of adding duplicates.
 - **Notes diary** — A general-purpose dated journal, sorted newest-first.
 - **To Do cards** — Dated cards with checklists.
 - **Filter, search, sort** — Find contacts by name, institution, region, or note content.
-- **Singapore time** — "Today", note dates, overdue status and the 28-day "next contact" default all use the date in Singapore (UTC+8), whatever time zone your device is set to.
+- **Singapore time** — "Today", note dates, reminder times, overdue status and the 28-day "next contact" default all use Singapore time (UTC+8), whatever time zone your device is set to.
 - **Markdown export** — Download your entire database as a structured `.md` file.
 - **Export for Claude / Import** — Download an unencrypted JSON copy for Claude to edit, then import it back. Imports are validated, show exactly what will be added, changed or deleted, and need confirmation before anything is saved.
 - **Auto-logout** — Signs you out after 3 hours of inactivity, with a warning 1 minute before.
@@ -103,6 +105,7 @@ The Content Security Policy blocks external scripts, external images, fonts, for
 | Stolen PAT | Anyone with your PAT can authenticate as you and decrypt your data. **Treat your PAT like a password.** |
 | Keylogger on the device | A keylogger can capture your PAT as you paste it |
 | Leftover export files | **Export for Claude** and **Download .md** files are not encrypted. Delete them when you're done |
+| Calendar events | **Add to calendar** puts contact names and reminder text into your calendar app, unencrypted, and synced wherever that calendar syncs |
 
 > **Security depends on safeguarding your GitHub Personal Access Token. Treat it like a password. Do not share it, do not commit it to a repo, and revoke it immediately if you suspect it has been exposed.**
 
