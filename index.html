@@ -154,8 +154,6 @@
         .type-personal { background: rgba(187, 154, 247, 0.12); color: #bb9af7; }
         .rem-chip { display: inline-flex; padding: 3px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; background: rgba(224, 175, 104, 0.12); color: #e0af68; }
         .rem-chip.overdue { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
-        tr.rem-done td { opacity: .45; }
-        tr.rem-done .rem-text { text-decoration: line-through; }
         .day-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
         .day-chip { background: var(--input-bg); color: var(--text-muted); border: 1px solid var(--border); border-radius: 14px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
         .day-chip:hover { border-color: var(--primary); color: var(--primary); }
@@ -1266,7 +1264,7 @@ function handleLogout(msg = '') {
 // ── APP ───────────────────────────────────────────────────────────────────────
 function renderApp() {
     const overdue = overdueCount(), due = dueReminderCount();
-    const TITLES = { contacts: ['Contacts', '+ Add Contact'], reminders: ['Reminders', '+ Add Reminder'], calendar: ['Calendar', '+ Add Reminder'], todos: ['To Do List', '+ Add Card'], notes: ['Notes Diary', '+ Add Entry'] };
+    const TITLES = { contacts: ['Contacts', '+ Add Contact'], calendar: ['Calendar', '+ Add Reminder'], todos: ['To Do List', '+ Add Card'], notes: ['Notes Diary', '+ Add Entry'] };
     document.getElementById('root').innerHTML = `
     <header class="app-header">
         <div style="display:flex; flex-direction:column;">
@@ -1286,8 +1284,7 @@ function renderApp() {
     </header>
     <nav class="tabs">
         <button class="tab-btn ${currentTab==='contacts'?'active':''}" data-tab="contacts">Contacts${overdue?`<span class="tab-badge">${overdue}</span>`:''}</button>
-        <button class="tab-btn ${currentTab==='reminders'?'active':''}" data-tab="reminders">Reminders${due?`<span class="tab-badge">${due}</span>`:''}</button>
-        <button class="tab-btn ${currentTab==='calendar'?'active':''}" data-tab="calendar">Calendar</button>
+        <button class="tab-btn ${currentTab==='calendar'?'active':''}" data-tab="calendar">Calendar${due?`<span class="tab-badge">${due}</span>`:''}</button>
         <button class="tab-btn ${currentTab==='todos'?'active':''}" data-tab="todos">To Do</button>
         <button class="tab-btn ${currentTab==='notes'?'active':''}" data-tab="notes">Notes</button>
     </nav>
@@ -1360,7 +1357,7 @@ function renderApp() {
 
         ${currentTab==='todos' || currentTab==='calendar'
             ? `<div id="tbl">${currentTab==='todos' ? renderTodosGrid() : renderCalendar()}</div>`
-            : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : currentTab==='reminders' ? renderRemindersTable() : renderTable()}</div></div>`
+            : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : renderTable()}</div></div>`
         }
     </main>`;
 
@@ -1370,7 +1367,7 @@ function renderApp() {
         handleLogout();
     };
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; selectedType = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
-    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : currentTab === 'reminders' || currentTab === 'calendar' ? openReminderModal(null) : openModal(null);
+    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : currentTab === 'calendar' ? openReminderModal(null) : openModal(null);
     document.getElementById('cal-btn').onclick = exportCalendar;
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     document.getElementById('claude-export-btn').onclick = exportForClaude;
@@ -1388,8 +1385,6 @@ function renderApp() {
         if (yf) yf.onchange = e => { todoFilterYear  = e.target.value; refreshTable(); };
     } else if (currentTab === 'notes') {
         attachNotesTableEvents();
-    } else if (currentTab === 'reminders') {
-        attachRemindersEvents();
     } else if (currentTab === 'calendar') {
         attachCalendarEvents();
     } else {
@@ -1412,9 +1407,6 @@ function refreshTable() {
     } else if (currentTab === 'notes') {
         document.getElementById('tbl').innerHTML = renderNotesTable();
         attachNotesTableEvents();
-    } else if (currentTab === 'reminders') {
-        document.getElementById('tbl').innerHTML = renderRemindersTable();
-        attachRemindersEvents();
     } else if (currentTab === 'calendar') {
         document.getElementById('tbl').innerHTML = renderCalendar();
         attachCalendarEvents();
@@ -1501,7 +1493,7 @@ function openNoteModal(editId) {
     };
 }
 
-// ── REMINDERS TAB ─────────────────────────────────────────────────────────────
+// ── REMINDER POP-UP ─────────────────────────────────────────────────────────────
 // Quick-pick buttons for a reminder's date: Today, Tomorrow, then the next Mon…Sun.
 function dayChipsHtml() {
     const t = today();
@@ -1514,54 +1506,6 @@ function dayChipsHtml() {
 }
 function wireDayChips(container, dateInput) {
     container.querySelectorAll('.day-chip').forEach(b => b.onclick = () => { dateInput.value = b.dataset.date; });
-}
-
-function renderRemindersTable() {
-    const all = contacts.reminders || [];
-    if (!all.length) return `<div class="empty-state"><div class="icon">⏰</div><p>No reminders yet. Click <strong>+ Add Reminder</strong> — e.g. "Thursday 10:00, message Alice about the proposal".</p></div>`;
-    const t = today();
-    const open = all.filter(r => !r.done).sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)));
-    const done = all.filter(r => r.done).sort((a, b) => reminderKey(b).localeCompare(reminderKey(a)));
-    return `<table><thead><tr>
-        <th style="width:50px; text-align:center;">Done</th>
-        <th style="width:190px;">When (SGT)</th>
-        <th>Reminder</th>
-        <th style="width:180px;">Contact</th>
-        <th style="width:150px;">Actions</th>
-    </tr></thead><tbody>` +
-    [...open, ...done].map(r => {
-        const who = r.contactId && findContact(r.contactId);
-        const status = r.done ? '' : r.date < t ? '<span class="status-badge status-overdue">Overdue</span>' : r.date === t ? '<span class="status-badge status-due-soon">Today</span>' : '';
-        return `<tr class="${r.done ? 'rem-done' : r.date < t ? 'overdue-row' : ''}">
-            <td style="text-align:center;"><input type="checkbox" class="rem-done-cb" data-id="${esc(r.id)}" ${r.done ? 'checked' : ''} style="accent-color:var(--primary); width:16px; height:16px; cursor:pointer;"></td>
-            <td style="white-space:nowrap;">${esc(fmtReminderWhen(r))} ${status}</td>
-            <td><div class="rem-text" style="white-space:pre-wrap;">${esc(r.text)}</div></td>
-            <td>${who ? `<span class="contact-name" data-contact="${esc(who.c.id)}">${esc(who.c.name)}</span>` : '<span class="institution-text">—</span>'}</td>
-            <td><div class="action-btns">
-                <button class="btn-icon edit-rem-btn" data-id="${esc(r.id)}">Edit</button>
-                <button class="btn-icon delete delete-rem-btn" data-id="${esc(r.id)}">Delete</button>
-            </div></td>
-        </tr>`;
-    }).join('') + '</tbody></table>';
-}
-
-function attachRemindersEvents() {
-    document.querySelectorAll('.rem-done-cb').forEach(cb => cb.onchange = () => {
-        const r = contacts.reminders.find(x => x.id === cb.dataset.id);
-        if (!r) return;
-        r.done = cb.checked;
-        refreshTable(); refreshBadges();
-        saveToGist();
-    });
-    document.querySelectorAll('.edit-rem-btn').forEach(b => b.onclick = () => openReminderModal(b.dataset.id));
-    document.querySelectorAll('.delete-rem-btn').forEach(b => b.onclick = () => {
-        if (!confirm('Delete this reminder?')) return;
-        contacts.reminders = contacts.reminders.filter(r => r.id !== b.dataset.id);
-        refreshTable(); refreshBadges();
-        saveToGist();
-        toast('Reminder deleted.');
-    });
-    document.querySelectorAll('.contact-name[data-contact]').forEach(el => el.onclick = () => openModal(el.dataset.contact));
 }
 
 function openReminderModal(editId, presetDate) {
@@ -1585,7 +1529,9 @@ function openReminderModal(editId, presetDate) {
                     <option value="">— None —</option>
                     ${people.map(p => `<option value="${esc(p.id)}" ${r?.contactId === p.id ? 'selected' : ''}>${esc(p.name)}${p.institution ? ' · ' + esc(p.institution) : ''}</option>`).join('')}
                 </select></div>
+            ${r ? `<label class="import-tick"><input type="checkbox" id="r-done" ${r.done ? 'checked' : ''}> Done</label>` : ''}
             <div class="modal-footer">
+                ${r ? `<button class="btn-sm danger" id="mr-del" style="margin-right:auto">Delete</button>` : ''}
                 <button class="btn btn-cancel" id="mr-cancel">Cancel</button>
                 <button class="btn btn-primary" id="mr-save" style="width:auto">${r ? 'Save Reminder' : 'Add Reminder'}</button>
             </div>
@@ -1604,7 +1550,8 @@ function openReminderModal(editId, presetDate) {
         const contactId = document.getElementById('r-contact').value;
         if (!date) { alert('Please pick a date.'); return; }
         if (!text) { alert('Please write what the reminder is for.'); return; }
-        const data = { id: r?.id || genId(), date, time, text, contactId, done: r?.done || false };
+        const doneBox = document.getElementById('r-done');
+        const data = { id: r?.id || genId(), date, time, text, contactId, done: doneBox ? doneBox.checked : false };
         if (!contacts.reminders) contacts.reminders = [];
         const i = contacts.reminders.findIndex(x => x.id === data.id);
         if (i !== -1) contacts.reminders[i] = data; else contacts.reminders.push(data);
@@ -1612,6 +1559,15 @@ function openReminderModal(editId, presetDate) {
         refreshTable(); refreshBadges();
         saveToGist();
         toast(r ? 'Reminder updated.' : 'Reminder added.');
+    };
+    const del = document.getElementById('mr-del');
+    if (del) del.onclick = () => {
+        if (!confirm('Delete this reminder?')) return;
+        contacts.reminders = contacts.reminders.filter(x => x.id !== r.id);
+        close();
+        refreshTable(); refreshBadges();
+        saveToGist();
+        toast('Reminder deleted.');
     };
     document.getElementById('r-text').focus();
 }
@@ -1802,7 +1758,7 @@ function attachTableEvents() {
 function refreshBadges() {
     document.querySelectorAll('.tab-btn').forEach(b => {
         const tab = b.dataset.tab;
-        if (tab !== 'contacts' && tab !== 'reminders') return;
+        if (tab !== 'contacts' && tab !== 'calendar') return;
         const n = tab === 'contacts' ? overdueCount() : dueReminderCount(), ex = b.querySelector('.tab-badge');
         if (n > 0) { if (ex) ex.textContent=n; else b.insertAdjacentHTML('beforeend',`<span class="tab-badge">${n}</span>`); }
         else if (ex) ex.remove();
