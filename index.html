@@ -1460,6 +1460,21 @@ function openModal(editId) {
     // Work on copies: editing the originals would change the contact even if the pop-up is cancelled,
     // and the next unrelated save would then send that "cancelled" edit to GitHub.
     const renderedNotes = notes.map(n => ({ ...n }));
+    const newestNoteDate = () => renderedNotes.reduce((m, n) => (n.date > m ? n.date : m), '');
+    // Keep Last Contact in step with the newest note: if it came from the newest note, it follows
+    // that note when its date changes or it's deleted, and a newer note always moves it forward.
+    // A Last Contact typed in by hand that's newer than every note is left alone. Next Contact
+    // follows (+28 days) unless it was set by hand to something else.
+    const followNotes = (prevNewest) => {
+        const newest = newestNoteDate();
+        const lastInp = document.getElementById('f-last');
+        const nextInp = document.getElementById('f-next');
+        const oldLast = lastInp.value;
+        if (!newest || newest === oldLast) return;
+        if (oldLast && oldLast !== prevNewest && newest < oldLast) return;
+        lastInp.value = newest;
+        if (!nextInp.value || !oldLast || nextInp.value === addDays(oldLast, 28)) nextInp.value = addDays(newest, 28);
+    };
     const updateNotesUI = () => {
         renderedNotes.sort(byDateDesc);
         document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
@@ -1481,7 +1496,9 @@ function openModal(editId) {
                 el.replaceWith(inp);
                 inp.focus();
                 inp.onblur = () => {
+                    const prevNewest = newestNoteDate();
                     renderedNotes[idx].date = inp.value || currentVal;
+                    followNotes(prevNewest);
                     updateNotesUI();
                 };
                 inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
@@ -1511,7 +1528,9 @@ function openModal(editId) {
 
         document.querySelectorAll('.note-delete').forEach(el => {
             el.onclick = () => {
+                const prevNewest = newestNoteDate();
                 renderedNotes.splice(parseInt(el.dataset.index), 1);
+                followNotes(prevNewest);
                 updateNotesUI();
             };
         });
@@ -1520,16 +1539,10 @@ function openModal(editId) {
     document.getElementById('add-note-btn').onclick = () => {
         const txt = document.getElementById('new-note-text').value.trim();
         if (txt) {
-            const noteDate = today();
-            renderedNotes.unshift({ date: noteDate, text: txt });
+            const prevNewest = newestNoteDate();
+            renderedNotes.unshift({ date: today(), text: txt });
             document.getElementById('new-note-text').value = '';
-            // Update Last Contact and push Next Contact by 28 days
-            const lastInp = document.getElementById('f-last');
-            const nextInp = document.getElementById('f-next');
-            if (!lastInp.value || noteDate >= lastInp.value) {
-                lastInp.value = noteDate;
-                nextInp.value = addDays(noteDate, 28);
-            }
+            followNotes(prevNewest);
             updateNotesUI();
         }
     };
@@ -1546,16 +1559,22 @@ function openModal(editId) {
         const name = document.getElementById('f-name').value.trim();
         const inst = document.getElementById('f-inst').value.trim();
         const reg  = document.getElementById('f-reg').value.trim();
-        const last = document.getElementById('f-last').value;
-        const next = document.getElementById('f-next').value;
         if (!name) { alert('Please enter a name.'); return; }
-        if (!last) { alert('Please enter the last contact date.'); return; }
-        if (!next) { alert('Please enter the next contact date.'); return; }
-        
+
+        // A note typed but not yet added counts as added, and moves the dates the same way.
         const pendingNote = document.getElementById('new-note-text').value.trim();
         if (pendingNote) {
+            const prevNewest = newestNoteDate();
             renderedNotes.unshift({ date: today(), text: pendingNote });
+            document.getElementById('new-note-text').value = '';
+            followNotes(prevNewest);
+            updateNotesUI();
         }
+
+        const last = document.getElementById('f-last').value;
+        const next = document.getElementById('f-next').value;
+        if (!last) { alert('Please enter the last contact date.'); return; }
+        if (!next) { alert('Please enter the next contact date.'); return; }
         
         const contactData = { 
             id: c?.id || genId(), 
