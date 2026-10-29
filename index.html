@@ -120,12 +120,13 @@
         /* NOTES LOG */
         .notes-log { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
         .note-entry { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; position: relative; }
-        .note-date { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 4px; display: block; cursor: pointer; padding: 2px 4px; border-radius: 4px; border: 1px solid transparent; width: fit-content; }
-        .note-date:hover { background: rgba(122, 162, 247, 0.1); border-color: var(--primary); }
         .note-text { font-size: 13px; color: var(--text); white-space: pre-wrap; cursor: pointer; padding: 6px; border-radius: 4px; transition: background 0.2s; border: 1px solid transparent; }
         .note-text:hover { background: rgba(255,255,255,0.05); border-color: var(--border); }
         .note-edit-area { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 5px; font-family: inherit; font-size: 13px; outline: none; margin-top: 5px; resize: none; overflow: hidden; box-sizing: border-box; }
-        .note-date-edit { background: var(--input-bg); color: var(--text); border: 1px solid var(--primary); border-radius: 4px; padding: 2px; font-size: 11px; outline: none; }
+        .note-date-input { background: var(--input-bg); color: var(--primary); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 12px; font-weight: 700; font-family: inherit; outline: none; color-scheme: dark; margin-bottom: 4px; }
+        .note-date-input:hover, .note-date-input:focus { border-color: var(--primary); }
+        .note-date-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+        .note-date-label { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
         .note-delete { position: absolute; top: 8px; right: 8px; color: var(--text-muted); cursor: pointer; font-size: 16px; opacity: 0.5; }
         .note-delete:hover { color: var(--danger); opacity: 1; }
         .add-note-box { margin-bottom: 20px; display: flex; gap: 10px; }
@@ -184,6 +185,7 @@
         .cal-item:hover { filter: brightness(1.25); }
         .cal-more { font-size: 11px; color: var(--text-muted); padding: 0 6px; }
         .cal-more:hover { color: var(--primary); }
+        .storage-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 28px; }
         .cal-hint { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
         .cal-day-list { display: flex; flex-direction: column; gap: 6px; }
         .cal-day-list .cal-item { font-size: 13px; padding: 6px 10px; white-space: normal; cursor: pointer; }
@@ -288,7 +290,8 @@ let todoFilterDay = 'All';
 let todoFilterMonth = 'All';
 let todoFilterYear = 'All';
 let sortConfig = { key: 'nextContact', direction: 'asc' };
-let lastSyncDate = null;   // updated_at of the Gist version this page last loaded or saved
+let lastSyncDate = null;
+let storageChars = 0;      // size of the encrypted Gist file, shown at the bottom of the app   // updated_at of the Gist version this page last loaded or saved
 
 // ── INACTIVITY LOGOUT ─────────────────────────────────────────────────────────
 // Measured against the clock rather than one long timer, because timers pause while
@@ -497,6 +500,7 @@ async function loadFromGist() {
     }
     contacts = sanitizeData(parsed);
     lastSyncDate = g.updated_at;
+    storageChars = raw.length;
     return true;
 }
 
@@ -596,6 +600,8 @@ async function writeGist(tok, snapshot) {
     stillSignedIn();
     gistId = res.id;
     lastSyncDate = res.updated_at;
+    storageChars = content.length;
+    showStorage();
 }
 
 function openConflictModal() {
@@ -643,6 +649,16 @@ function openConflictModal() {
         close();
         saveToGist();
     };
+}
+
+// "Storage used" line at the bottom of the app. GitHub serves the file to the app up to ~10 MB.
+function showStorage() {
+    const el = document.getElementById('storage-note');
+    if (!el) return;
+    const mb = storageChars / (1024 * 1024);
+    const pct = Math.min(100, (mb / 10) * 100);
+    el.textContent = `Storage used: ${mb < 0.1 ? Math.max(1, Math.round(storageChars / 1024)) + ' KB' : mb.toFixed(2) + ' MB'} of about 10 MB (${pct < 1 ? '<1' : Math.round(pct)}%)`;
+    el.style.color = pct >= 80 ? 'var(--danger)' : '';
 }
 
 // Warn before closing the tab while changes are still on their way to GitHub.
@@ -1252,6 +1268,7 @@ function handleLogout(msg = '') {
     _lastSentSnapshot = null;
     syncState = 'ok';
     calMonth = null;
+    storageChars = 0;
 
     // Wipe the page, including any open pop-up, to remove decrypted text
     document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
@@ -1359,9 +1376,11 @@ function renderApp() {
             ? `<div id="tbl">${currentTab==='todos' ? renderTodosGrid() : renderCalendar()}</div>`
             : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : renderTable()}</div></div>`
         }
+        <p class="storage-note" id="storage-note"></p>
     </main>`;
 
     setSyncBadge(syncState);
+    showStorage();
     document.getElementById('logout-btn').onclick = () => {
         if (_unsaved && !confirm('Some changes haven\'t been saved to GitHub yet and will be lost if you sign out now. Sign out anyway?')) return;
         handleLogout();
@@ -1814,19 +1833,16 @@ function openModal(editId) {
 
             <div class="notes-log">
                 <label style="display:block; font-size:13px; font-weight:600; margin-bottom:12px; color:var(--text-muted);">Notes Log</label>
+                <div class="note-date-row">
+                    <span class="note-date-label">When did you speak?</span>
+                    <input type="date" id="new-note-date" class="note-date-input" value="${today()}" max="${today()}">
+                    ${[['Today', 0], ['Yesterday', 1], ['2 days ago', 2], ['3 days ago', 3]].map(([l, n]) => `<button type="button" class="day-chip note-chip" data-ago="${n}">${l}</button>`).join('')}
+                </div>
                 <div class="add-note-box">
                     <textarea id="new-note-text" class="form-control" placeholder="Add a new dated note..."></textarea>
                     <button class="btn btn-add" id="add-note-btn" style="height: fit-content;">Add</button>
                 </div>
-                <div id="notes-list">
-                    ${notes.map((n, i) => `
-                        <div class="note-entry">
-                            <span class="note-date">${fmtDate(n.date)}</span>
-                            <div class="note-text">${esc(n.text)}</div>
-                            <span class="note-delete" data-index="${i}">&times;</span>
-                        </div>
-                    `).join('')}
-                </div>
+                <div id="notes-list"></div>
             </div>
 
             <div class="modal-footer">
@@ -1903,34 +1919,35 @@ function openModal(editId) {
         lastInp.value = newest;
         if (!nextInp.value || !oldLast || nextInp.value === addDays(oldLast, 28)) nextInp.value = addDays(newest, 28);
     };
+    let dateEditStart = null; // newest note date before a note's date was changed, until that change is applied
+    const commitNoteDateEdit = () => {
+        if (dateEditStart === null) return;
+        const prev = dateEditStart;
+        dateEditStart = null;
+        followNotes(prev);
+        updateNotesUI();
+    };
     const updateNotesUI = () => {
         renderedNotes.sort(byDateDesc);
         document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
             <div class="note-entry">
-                <span class="note-date" data-index="${i}">${fmtDate(n.date)}</span>
+                <input type="date" class="note-date-input" data-index="${i}" value="${esc(n.date)}" max="${today()}" title="Change the date of this note">
                 <div class="note-text" data-index="${i}">${esc(n.text)}</div>
                 <span class="note-delete" data-index="${i}">&times;</span>
             </div>
         `).join('');
         
-        document.querySelectorAll('.note-date').forEach(el => {
-            el.onclick = () => {
-                const idx = parseInt(el.dataset.index);
-                const currentVal = renderedNotes[idx].date;
-                const inp = document.createElement('input');
-                inp.type = 'date';
-                inp.className = 'note-date-edit';
-                inp.value = currentVal;
-                el.replaceWith(inp);
-                inp.focus();
-                inp.onblur = () => {
-                    const prevNewest = newestNoteDate();
-                    renderedNotes[idx].date = inp.value || currentVal;
-                    followNotes(prevNewest);
-                    updateNotesUI();
-                };
-                inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
+        // The date is stored as soon as it changes; Last Contact and the order catch up when
+        // you leave the box (or press Save), so half-typed dates never move anything.
+        document.querySelectorAll('#notes-list .note-date-input').forEach(inp => {
+            const idx = parseInt(inp.dataset.index);
+            inp.onchange = () => {
+                if (dateEditStart === null) dateEditStart = newestNoteDate();
+                const v = inp.value;
+                if (v && v <= today()) renderedNotes[idx].date = v;
             };
+            inp.onblur = commitNoteDateEdit;
+            inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
         });
 
         document.querySelectorAll('.note-text').forEach(el => {
@@ -1964,11 +1981,22 @@ function openModal(editId) {
         });
     };
     
+    // Date for a new note: the chosen day, which can't be in the future.
+    const newNoteDate = () => {
+        const d = document.getElementById('new-note-date').value || today();
+        if (d > today()) { alert('A note can\'t be dated in the future. Use a reminder for things that haven\'t happened yet.'); return null; }
+        return d;
+    };
+    document.querySelectorAll('.note-chip').forEach(b => b.onclick = () => {
+        document.getElementById('new-note-date').value = addDays(today(), -parseInt(b.dataset.ago));
+    });
     document.getElementById('add-note-btn').onclick = () => {
         const txt = document.getElementById('new-note-text').value.trim();
         if (txt) {
+            const date = newNoteDate();
+            if (!date) return;
             const prevNewest = newestNoteDate();
-            renderedNotes.unshift({ date: today(), text: txt });
+            renderedNotes.unshift({ date, text: txt });
             document.getElementById('new-note-text').value = '';
             followNotes(prevNewest);
             updateNotesUI();
@@ -1990,12 +2018,15 @@ function openModal(editId) {
         const type = document.getElementById('f-type').value;
         if (!name) { alert('Please enter a name.'); return; }
         if (!addPendingReminder()) return; // a reminder typed but not yet added counts as added
+        commitNoteDateEdit();               // a note date changed but not yet applied
 
         // A note typed but not yet added counts as added, and moves the dates the same way.
         const pendingNote = document.getElementById('new-note-text').value.trim();
         if (pendingNote) {
+            const date = newNoteDate();
+            if (!date) return;
             const prevNewest = newestNoteDate();
-            renderedNotes.unshift({ date: today(), text: pendingNote });
+            renderedNotes.unshift({ date, text: pendingNote });
             document.getElementById('new-note-text').value = '';
             followNotes(prevNewest);
             updateNotesUI();
