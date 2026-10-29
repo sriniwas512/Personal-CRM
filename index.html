@@ -166,6 +166,38 @@
         .rem-entry .rem-del:hover { color: var(--danger); opacity: 1; }
         .add-rem-box { display: grid; grid-template-columns: 1fr 110px; gap: 8px; margin-bottom: 8px; }
 
+        /* CALENDAR */
+        .cal-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+        .cal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .cal-title { font-size: 18px; font-weight: 700; min-width: 170px; text-align: center; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+        .cal-wd { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; padding: 4px 6px; }
+        .cal-day { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; min-height: 108px; padding: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; min-width: 0; transition: border-color .15s; }
+        .cal-day:hover { border-color: var(--primary); }
+        .cal-day.other { opacity: .45; }
+        .cal-day.today { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+        .cal-day.today .cal-num { background: var(--primary); color: #1a1b26; border-radius: 10px; padding: 0 7px; }
+        .cal-num { font-size: 12px; font-weight: 700; color: var(--text-muted); align-self: flex-start; }
+        .cal-item { font-size: 11px; line-height: 1.35; padding: 2px 6px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cal-rem { background: rgba(224, 175, 104, 0.14); color: #e0af68; }
+        .cal-contact { background: rgba(122, 162, 247, 0.12); color: var(--primary); }
+        .cal-item.overdue { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
+        .cal-item.done { opacity: .5; text-decoration: line-through; }
+        .cal-item:hover { filter: brightness(1.25); }
+        .cal-more { font-size: 11px; color: var(--text-muted); padding: 0 6px; }
+        .cal-more:hover { color: var(--primary); }
+        .cal-hint { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+        .cal-day-list { display: flex; flex-direction: column; gap: 6px; }
+        .cal-day-list .cal-item { font-size: 13px; padding: 6px 10px; white-space: normal; cursor: pointer; }
+        @media(max-width: 640px) {
+            .cal-wrap { padding: 8px; }
+            .cal-grid { gap: 2px; }
+            .cal-day { min-height: 64px; padding: 3px; }
+            .cal-item { font-size: 9px; padding: 1px 3px; }
+            .cal-wd { font-size: 9px; padding: 2px; }
+            .cal-title { min-width: 0; font-size: 15px; }
+        }
+
         /* TODO GRID */
         .todo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: start; }
         .todo-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; position: relative; display: flex; flex-direction: column; gap: 8px; }
@@ -199,6 +231,10 @@
 
         @media(max-width: 640px) {
             .app-header, .tabs, .main-content { padding-left: 16px; padding-right: 16px; }
+            .app-header { height: auto; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+            .header-right { margin-left: 0; width: 100%; flex-wrap: wrap; gap: 6px; }
+            .tabs { overflow-x: auto; }
+            .tab-btn { padding: 12px 14px; white-space: nowrap; }
             .modal { padding: 24px 20px; }
             .login-card { padding: 36px 24px; }
         }
@@ -249,6 +285,7 @@ let searchQuery = '';
 let selectedInstitution = 'All';
 let selectedRegion = 'All';
 let selectedType = 'All';
+let calMonth = null; // first day of the month shown in the Calendar tab (null = this month)
 let todoFilterDay = 'All';
 let todoFilterMonth = 'All';
 let todoFilterYear = 'All';
@@ -1216,6 +1253,7 @@ function handleLogout(msg = '') {
     _conflict = null;
     _lastSentSnapshot = null;
     syncState = 'ok';
+    calMonth = null;
 
     // Wipe the page, including any open pop-up, to remove decrypted text
     document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
@@ -1228,7 +1266,7 @@ function handleLogout(msg = '') {
 // ── APP ───────────────────────────────────────────────────────────────────────
 function renderApp() {
     const overdue = overdueCount(), due = dueReminderCount();
-    const TITLES = { contacts: ['Contacts', '+ Add Contact'], reminders: ['Reminders', '+ Add Reminder'], todos: ['To Do List', '+ Add Card'], notes: ['Notes Diary', '+ Add Entry'] };
+    const TITLES = { contacts: ['Contacts', '+ Add Contact'], reminders: ['Reminders', '+ Add Reminder'], calendar: ['Calendar', '+ Add Reminder'], todos: ['To Do List', '+ Add Card'], notes: ['Notes Diary', '+ Add Entry'] };
     document.getElementById('root').innerHTML = `
     <header class="app-header">
         <div style="display:flex; flex-direction:column;">
@@ -1249,6 +1287,7 @@ function renderApp() {
     <nav class="tabs">
         <button class="tab-btn ${currentTab==='contacts'?'active':''}" data-tab="contacts">Contacts${overdue?`<span class="tab-badge">${overdue}</span>`:''}</button>
         <button class="tab-btn ${currentTab==='reminders'?'active':''}" data-tab="reminders">Reminders${due?`<span class="tab-badge">${due}</span>`:''}</button>
+        <button class="tab-btn ${currentTab==='calendar'?'active':''}" data-tab="calendar">Calendar</button>
         <button class="tab-btn ${currentTab==='todos'?'active':''}" data-tab="todos">To Do</button>
         <button class="tab-btn ${currentTab==='notes'?'active':''}" data-tab="notes">Notes</button>
     </nav>
@@ -1319,8 +1358,8 @@ function renderApp() {
             </div>`;
         })() : ''}
 
-        ${currentTab==='todos'
-            ? `<div id="tbl">${renderTodosGrid()}</div>`
+        ${currentTab==='todos' || currentTab==='calendar'
+            ? `<div id="tbl">${currentTab==='todos' ? renderTodosGrid() : renderCalendar()}</div>`
             : `<div class="contacts-wrapper"><div class="table-scroll" id="tbl">${currentTab==='notes' ? renderNotesTable() : currentTab==='reminders' ? renderRemindersTable() : renderTable()}</div></div>`
         }
     </main>`;
@@ -1331,7 +1370,7 @@ function renderApp() {
         handleLogout();
     };
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; selectedInstitution = 'All'; selectedRegion = 'All'; selectedType = 'All'; searchQuery = ''; todoFilterDay = 'All'; todoFilterMonth = 'All'; todoFilterYear = 'All'; renderApp(); });
-    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : currentTab === 'reminders' ? openReminderModal(null) : openModal(null);
+    document.getElementById('add-btn').onclick = () => currentTab === 'notes' ? openNoteModal() : currentTab === 'todos' ? openTodoModal() : currentTab === 'reminders' || currentTab === 'calendar' ? openReminderModal(null) : openModal(null);
     document.getElementById('cal-btn').onclick = exportCalendar;
     document.getElementById('dl-btn').onclick = downloadMarkdown;
     document.getElementById('claude-export-btn').onclick = exportForClaude;
@@ -1351,6 +1390,8 @@ function renderApp() {
         attachNotesTableEvents();
     } else if (currentTab === 'reminders') {
         attachRemindersEvents();
+    } else if (currentTab === 'calendar') {
+        attachCalendarEvents();
     } else {
         const typeF = document.getElementById('type-filter');
         if (typeF) typeF.onchange = (e) => { selectedType = e.target.value; refreshTable(); };
@@ -1374,6 +1415,9 @@ function refreshTable() {
     } else if (currentTab === 'reminders') {
         document.getElementById('tbl').innerHTML = renderRemindersTable();
         attachRemindersEvents();
+    } else if (currentTab === 'calendar') {
+        document.getElementById('tbl').innerHTML = renderCalendar();
+        attachCalendarEvents();
     } else {
         document.getElementById('tbl').innerHTML = renderTable();
         attachTableEvents();
@@ -1520,7 +1564,7 @@ function attachRemindersEvents() {
     document.querySelectorAll('.contact-name[data-contact]').forEach(el => el.onclick = () => openModal(el.dataset.contact));
 }
 
-function openReminderModal(editId) {
+function openReminderModal(editId, presetDate) {
     const r = editId ? (contacts.reminders || []).find(x => x.id === editId) : null;
     const people = contactRows().sort((a, b) => a.name.localeCompare(b.name));
     document.body.insertAdjacentHTML('beforeend', `
@@ -1529,7 +1573,7 @@ function openReminderModal(editId) {
             <div class="modal-header"><h3 class="modal-title">${r ? 'Edit' : 'Add'} Reminder</h3><button class="modal-close" id="mr-x">&times;</button></div>
             <div style="display:grid; grid-template-columns: 1fr 130px; gap: 12px;">
                 <div class="form-group"><label>Date <span style="color:var(--danger)">*</span></label>
-                    <input type="date" id="r-date" class="form-control" value="${esc(r?.date || today())}"></div>
+                    <input type="date" id="r-date" class="form-control" value="${esc(r?.date || presetDate || today())}"></div>
                 <div class="form-group"><label>Time (SGT)</label>
                     <input type="time" id="r-time" class="form-control" value="${esc(r?.time || '')}"></div>
             </div>
@@ -1570,6 +1614,109 @@ function openReminderModal(editId) {
         toast(r ? 'Reminder updated.' : 'Reminder added.');
     };
     document.getElementById('r-text').focus();
+}
+
+// ── CALENDAR TAB ──────────────────────────────────────────────────────────────
+// A month grid (weeks start Monday). Each day lists its reminders and the contacts whose Next
+// Contact date falls on it. Click a day's empty space to add a reminder on that date; click an
+// item to open it; "+N more" lists the whole day.
+const CAL_MAX_ITEMS = 3;
+function monthStart(d) { return d.slice(0, 7) + '-01'; }
+function addMonths(first, n) {
+    const y = +first.slice(0, 4), m = +first.slice(5, 7) - 1 + n;
+    return new Date(Date.UTC(y + Math.floor(m / 12), ((m % 12) + 12) % 12, 1)).toISOString().slice(0, 10);
+}
+// Everything on each date: reminders (by time) first, then Next Contact dates.
+function calendarItems() {
+    const byDate = {};
+    const add = (d, item) => { if (d) (byDate[d] = byDate[d] || []).push(item); };
+    [...(contacts.reminders || [])].sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)))
+        .forEach(r => add(r.date, { kind: 'rem', r }));
+    contactRows().sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(c => add(c.nextContact, { kind: 'contact', c }));
+    return byDate;
+}
+function calItemHtml(item, t) {
+    if (item.kind === 'rem') {
+        const r = item.r, who = r.contactId && findContact(r.contactId);
+        const cls = r.done ? ' done' : (r.date < t ? ' overdue' : '');
+        const label = (r.time ? r.time + ' ' : '') + r.text.split('\n')[0] + (who ? ' — ' + who.c.name : '');
+        return `<div class="cal-item cal-rem${cls}" data-rem="${esc(r.id)}" title="${esc(fmtReminderWhen(r) + ' — ' + r.text)}">⏰ ${esc(label)}</div>`;
+    }
+    const c = item.c, overdue = c.nextContact < t;
+    return `<div class="cal-item cal-contact${overdue ? ' overdue' : ''}" data-contact="${esc(c.id)}" title="${esc('Next contact: ' + c.name)}">👤 ${esc(c.name)}</div>`;
+}
+function renderCalendar() {
+    const t = today();
+    const first = calMonth || monthStart(t);
+    const offset = (new Date(dayMs(first)).getUTCDay() + 6) % 7;      // days shown before the 1st (Mon start)
+    const daysInMonth = new Date(Date.UTC(+first.slice(0, 4), +first.slice(5, 7), 0)).getUTCDate();
+    const weeks = Math.ceil((offset + daysInMonth) / 7);
+    const start = addDays(first, -offset);
+    const items = calendarItems();
+    const title = new Date(dayMs(first)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    let cells = '';
+    for (let i = 0; i < weeks * 7; i++) {
+        const d = addDays(start, i);
+        const list = items[d] || [];
+        const extra = list.length - CAL_MAX_ITEMS;
+        cells += `<div class="cal-day${d.slice(0, 7) !== first.slice(0, 7) ? ' other' : ''}${d === t ? ' today' : ''}" data-date="${d}" title="Add a reminder on ${fmtDate(d)}">
+            <div class="cal-num">${+d.slice(8, 10)}</div>
+            ${list.slice(0, extra > 0 ? CAL_MAX_ITEMS - 1 : CAL_MAX_ITEMS).map(it => calItemHtml(it, t)).join('')}
+            ${extra > 0 ? `<div class="cal-more" data-day="${d}">+${extra + 1} more</div>` : ''}
+        </div>`;
+    }
+    return `<div class="cal-wrap">
+        <div class="cal-head">
+            <button class="btn-sm" id="cal-prev" aria-label="Previous month">‹</button>
+            <h3 class="cal-title">${title}</h3>
+            <button class="btn-sm" id="cal-next" aria-label="Next month">›</button>
+            <button class="btn-sm" id="cal-today" style="margin-left:auto">Today</button>
+        </div>
+        <div class="cal-grid">
+            ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => `<div class="cal-wd">${w}</div>`).join('')}
+            ${cells}
+        </div>
+        <p class="cal-hint">Click a day to add a reminder on it (on a phone, tap a day to see everything on it). ⏰ reminders · 👤 Next Contact dates · Times are Singapore time.</p>
+    </div>`;
+}
+function attachCalendarEvents() {
+    const go = m => { calMonth = m; refreshTable(); };
+    const first = calMonth || monthStart(today());
+    document.getElementById('cal-prev').onclick = () => go(addMonths(first, -1));
+    document.getElementById('cal-next').onclick = () => go(addMonths(first, 1));
+    document.getElementById('cal-today').onclick = () => go(monthStart(today()));
+    document.querySelectorAll('.cal-day').forEach(cell => cell.onclick = e => {
+        // On a phone the items are too small to tap, so a day opens its full list instead.
+        if (window.matchMedia('(max-width: 640px)').matches) return openDayModal(cell.dataset.date);
+        const rem = e.target.closest('[data-rem]'), who = e.target.closest('[data-contact]'), more = e.target.closest('[data-day]');
+        if (rem) openReminderModal(rem.dataset.rem);
+        else if (who) openModal(who.dataset.contact);
+        else if (more) openDayModal(more.dataset.day);
+        else openReminderModal(null, cell.dataset.date);
+    });
+}
+// Everything on one day, with a button to add a reminder on it.
+function openDayModal(d) {
+    const t = today();
+    const list = calendarItems()[d] || [];
+    document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="mo-day">
+        <div class="modal" style="max-width:460px">
+            <div class="modal-header"><h3 class="modal-title">${esc(new Date(dayMs(d)).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }))}</h3><button class="modal-close" id="md-x">&times;</button></div>
+            <div class="cal-day-list">${list.map(it => calItemHtml(it, t)).join('') || '<p class="institution-text">Nothing on this day.</p>'}</div>
+            <div class="modal-footer"><button class="btn btn-primary" id="md-add" style="width:auto">+ Add reminder on this day</button></div>
+        </div>
+    </div>`);
+    const close = () => { const m = document.getElementById('mo-day'); if (m) m.remove(); };
+    document.getElementById('md-x').onclick = close;
+    document.getElementById('mo-day').onclick = e => {
+        if (e.target.id === 'mo-day') return close();
+        const rem = e.target.closest('[data-rem]'), who = e.target.closest('[data-contact]');
+        if (rem) { close(); openReminderModal(rem.dataset.rem); }
+        else if (who) { close(); openModal(who.dataset.contact); }
+    };
+    document.getElementById('md-add').onclick = () => { close(); openReminderModal(null, d); };
 }
 
 // ── TABLE ─────────────────────────────────────────────────────────────────────
