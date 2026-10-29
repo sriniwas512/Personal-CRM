@@ -1442,12 +1442,24 @@ function openModal(editId) {
 
     wireTextarea(document.getElementById('new-note-text'));
     const close = () => { document.getElementById('mo').remove(); };
-    document.getElementById('mc').onclick = close;
-    document.getElementById('mc2').onclick = close;
-    document.getElementById('mo').onclick = e => { if (e.target.id==='mo') close(); };
+    // Closing without saving discards edits, so ask first if anything changed.
+    const formState = () => JSON.stringify([
+        ...['f-name', 'f-inst', 'f-reg', 'f-last', 'f-next', 'new-note-text'].map(id => document.getElementById(id).value),
+        renderedNotes
+    ]);
+    let initialState;
+    const cancel = () => {
+        if (formState() !== initialState && !confirm('Discard your changes to this contact?')) return;
+        close();
+    };
+    document.getElementById('mc').onclick = cancel;
+    document.getElementById('mc2').onclick = cancel;
+    document.getElementById('mo').onclick = e => { if (e.target.id==='mo') cancel(); };
 
     // Notes Logic
-    const renderedNotes = [...notes];
+    // Work on copies: editing the originals would change the contact even if the pop-up is cancelled,
+    // and the next unrelated save would then send that "cancelled" edit to GitHub.
+    const renderedNotes = notes.map(n => ({ ...n }));
     const updateNotesUI = () => {
         renderedNotes.sort(byDateDesc);
         document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
@@ -1527,6 +1539,7 @@ function openModal(editId) {
         if (lastVal) nextInp.value = addDays(lastVal, 28);
     };
     updateNotesUI();
+    initialState = formState();
 
 
     document.getElementById('ms').onclick = async () => {
