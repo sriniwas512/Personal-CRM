@@ -1907,8 +1907,8 @@ function openModal(editId) {
     const newestNoteDate = () => renderedNotes.reduce((m, n) => (n.date > m ? n.date : m), '');
     // Keep Last Contact in step with the newest note: if it came from the newest note, it follows
     // that note when its date changes or it's deleted, and a newer note always moves it forward.
-    // A Last Contact typed in by hand that's newer than every note is left alone. Next Contact
-    // follows (+28 days) unless it was set by hand to something else.
+    // A Last Contact typed in by hand that's newer than every note is left alone. Whenever Last
+    // Contact changes, Next Contact becomes Last Contact + 28 days.
     const followNotes = (prevNewest) => {
         const newest = newestNoteDate();
         const lastInp = document.getElementById('f-last');
@@ -1917,7 +1917,7 @@ function openModal(editId) {
         if (!newest || newest === oldLast) return;
         if (oldLast && oldLast !== prevNewest && newest < oldLast) return;
         lastInp.value = newest;
-        if (!nextInp.value || !oldLast || nextInp.value === addDays(oldLast, 28)) nextInp.value = addDays(newest, 28);
+        nextInp.value = addDays(newest, 28);
     };
     let dateEditStart = null; // newest note date before a note's date was changed, until that change is applied
     const commitNoteDateEdit = () => {
@@ -2002,11 +2002,14 @@ function openModal(editId) {
             updateNotesUI();
         }
     };
-    document.getElementById('f-last').onchange = (e) => {
-        const nextInp = document.getElementById('f-next');
+    // Changing Last Contact by hand always moves Next Contact to 28 days later. Listening to both
+    // events covers browsers that only report a typed date when you leave the box.
+    const lastChanged = (e) => {
         const lastVal = e.target.value;
-        if (lastVal) nextInp.value = addDays(lastVal, 28);
+        if (lastVal && DATE_RE.test(lastVal)) document.getElementById('f-next').value = addDays(lastVal, 28);
     };
+    document.getElementById('f-last').oninput = lastChanged;
+    document.getElementById('f-last').onchange = lastChanged;
     updateNotesUI();
     initialState = formState();
 
