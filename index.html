@@ -106,6 +106,8 @@
         .modal-close { background: none; border: none; font-size: 26px; cursor: pointer; color: var(--text-muted); line-height: 1; }
         .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 26px; }
         .modal-footer .btn { width: auto; }
+        .autosave-footer { align-items: center; }
+        .autosave-note { margin-right: auto; font-size: 12px; color: var(--success); opacity: .8; }
         .import-summary { display: grid; gap: 6px; font-size: 14px; margin-bottom: 14px; }
         .import-summary .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; background: var(--input-bg); border-radius: 8px; }
         .import-summary .n { font-variant-numeric: tabular-nums; color: var(--text-muted); }
@@ -319,15 +321,21 @@ function resetLogoutTimer() {
     warnedAboutTimeout = false;
 }
 
+// Stores anything half-typed and waits for one save attempt to finish (used before signing out).
+async function saveNow() {
+    flushDrafts();
+    if (_unsaved && !_conflict) {
+        clearTimeout(_saveTimer); _saveTimer = null;
+        clearTimeout(_retryTimer); _retryTimer = null;
+        await new Promise(resolve => { _saveWaiters.push(resolve); runSave(); });
+    }
+}
+
 async function logoutForInactivity() {
     loggingOutForInactivity = true;
     try {
         // Give edits that haven't reached GitHub one last chance before signing out.
-        if (_unsaved && !_conflict) {
-            clearTimeout(_saveTimer); _saveTimer = null;
-            clearTimeout(_retryTimer); _retryTimer = null;
-            await new Promise(resolve => { _saveWaiters.push(resolve); runSave(); });
-        }
+        await saveNow();
         const lost = _unsaved;
         handleLogout('You were signed out after 3 hours of inactivity.' + (lost ? ' Some recent changes could not be saved to GitHub.' : ''));
     } finally {
@@ -505,11 +513,14 @@ async function loadFromGist() {
 }
 
 // ── SAVING ────────────────────────────────────────────────────────────────────
-// Edits are saved 0.4 s after the last change. Only one save talks to GitHub at a time;
+// Edits are uploaded 1.5 s after the last change (typing stays in the app instantly; waiting for a
+// pause keeps well inside GitHub's limits on how often content can change). Only one save talks to GitHub at a time;
 // edits made meanwhile go out in the next one. Before writing, the Gist is checked so a
 // newer version saved from another device or tab is never overwritten without asking.
 const STORAGE_WARN_CHARS = 8 * 1024 * 1024; // GitHub stops serving Gist files to the app above ~10 MB
+const SAVE_DELAY_MS = 1500;
 let _saveTimer = null;
+let _retryDelay = 5000;     // grows after each failed save (up to 1 minute), back to 5 s after a success
 let _retryTimer = null;
 let _saving = false;       // a save is talking to GitHub right now
 let _saveQueued = false;   // another save was asked for while that one ran
@@ -527,7 +538,7 @@ function saveToGist() {
     clearTimeout(_retryTimer); _retryTimer = null;
     return new Promise(resolve => {
         _saveWaiters.push(resolve);
-        _saveTimer = setTimeout(runSave, 400);
+        _saveTimer = setTimeout(runSave, SAVE_DELAY_MS);
     });
 }
 
@@ -550,6 +561,7 @@ async function runSave() {
     if (tok !== token) return; // signed out while saving; nothing to report
 
     if (!error) {
+        _retryDelay = 5000;
         if (!_saveTimer) { _unsaved = false; setSyncBadge('ok'); }
     } else if (error.message === 'CONFLICT') {
         _conflict = { remoteUpdatedAt: error.remoteUpdatedAt };
@@ -559,7 +571,8 @@ async function runSave() {
         setSyncBadge('err');
         // Keep retrying in the background so changes go out once the connection is back.
         if (!_saveTimer && !_retryTimer) {
-            _retryTimer = setTimeout(() => { _retryTimer = null; runSave(); }, 5000);
+            _retryTimer = setTimeout(() => { _retryTimer = null; runSave(); }, _retryDelay);
+            _retryDelay = Math.min(_retryDelay * 2, 60000);
         }
     }
 }
@@ -638,7 +651,8 @@ function openConflictModal() {
         _conflict = null;
         _unsaved = false;
         syncState = 'ok';
-        close();
+        draftFlushers.clear();
+        document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
         renderApp();
         toast('Loaded the latest version.');
     };
@@ -661,8 +675,30 @@ function showStorage() {
     el.style.color = pct >= 80 ? 'var(--danger)' : '';
 }
 
+// ── AUTO-SAVE ─────────────────────────────────────────────────────────────────
+// Pop-ups write what you type into your data as you go (the upload to GitHub waits for a short
+// pause in typing). Each open pop-up registers a flush here, so closing the tab or signing out
+// first stores anything half-typed.
+const draftFlushers = new Set();
+function flushDrafts() {
+    draftFlushers.forEach(f => f());
+    // A To Do task typed but not yet added
+    document.querySelectorAll('[data-card-input]').forEach(inp => {
+        if (inp.value.trim()) inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    });
+}
+// Focus a text box with the cursor after any existing text, so typing continues it.
+function focusAtEnd(el) {
+    el.focus();
+    el.selectionStart = el.selectionEnd = el.value.length;
+}
+function autosaveFooter(doneId) {
+    return `<div class="modal-footer autosave-footer"><span class="autosave-note">✓ Saves automatically as you type</span><button class="btn btn-primary" id="${doneId}" style="width:auto">Done</button></div>`;
+}
+
 // Warn before closing the tab while changes are still on their way to GitHub.
 window.addEventListener('beforeunload', e => {
+    if (token) flushDrafts();
     if (token && _unsaved) { e.preventDefault(); e.returnValue = ''; }
 });
 
@@ -826,8 +862,7 @@ function wireTextEdit(span, card) {
         input.focus(); input.select();
         const finish = () => {
             const newText = input.value.trim();
-            if (newText) card.items[idx].text = newText;
-            if (newText && newText !== originalText) saveToGist();
+            if (newText && card.items[idx] && card.items[idx].text !== newText) { card.items[idx].text = newText; saveToGist(); }
             const newSpan = document.createElement('span');
             newSpan.className = `todo-item-text${done ? ' done' : ''}`;
             newSpan.dataset.card = card.id;
@@ -836,10 +871,14 @@ function wireTextEdit(span, card) {
             input.replaceWith(newSpan);
             wireTextEdit(newSpan, card);
         };
+        input.oninput = () => {
+            const t = input.value.trim();
+            if (t && card.items[idx]) { card.items[idx].text = t; saveToGist(); }
+        };
         input.onblur = finish;
         input.onkeydown = e => {
             if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
-            if (e.key === 'Escape') { input.value = originalText; input.blur(); }
+            if (e.key === 'Escape') { input.value = originalText; card.items[idx].text = originalText; saveToGist(); input.blur(); }
         };
     };
 }
@@ -878,6 +917,7 @@ function attachTodoEvents() {
     });
     document.querySelectorAll('[data-card-input]').forEach(inp => {
         inp.onkeydown = e => { if (e.key === 'Enter') addTodoItem(inp.dataset.cardInput, inp); };
+        inp.onblur = () => addTodoItem(inp.dataset.cardInput, inp); // typed but not added: keep it
     });
 }
 
@@ -897,26 +937,39 @@ function openTodoModal() {
                 <label>Title <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
                 <input type="text" id="td-title" class="form-control" value="${esc(fmtDate(today()))}" placeholder="e.g. Work tasks, Errands…">
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-cancel" id="mtc2">Cancel</button>
+            <div class="modal-footer autosave-footer">
+                <span class="autosave-note">✓ Saves automatically as you type</span>
                 <button class="btn btn-primary" id="mts" style="width:auto">Create Card</button>
             </div>
         </div>
     </div>`);
-    const close = () => document.getElementById('mo-todo').remove();
-    document.getElementById('mtc').onclick = close;
-    document.getElementById('mtc2').onclick = close;
-    document.getElementById('mo-todo').onclick = e => { if (e.target.id === 'mo-todo') close(); };
-    document.getElementById('mts').onclick = async () => {
-        const date = document.getElementById('td-date').value;
+    // The card is created as soon as you change the date or title (or press Create Card),
+    // and kept up to date as you type. Closing without touching anything creates nothing.
+    let card = null, touched = false;
+    const commit = (force = false) => {
+        const d = document.getElementById('td-date').value;
+        const date = DATE_RE.test(d) ? d : (card?.date || today());
         const title = document.getElementById('td-title').value.trim();
-        if (!date) { alert('Please pick a date.'); return; }
-        contacts.todos.push({ id: genId(), date, title, items: [] });
-        close(); // closing first means a double-click can't create a second card
-        refreshTable();
+        if (!card) {
+            if (!touched && !force) return;
+            card = { id: genId(), date, title, items: [] };
+            contacts.todos.push(card);
+        } else if (card.date === date && card.title === title) return;
+        else { card.date = date; card.title = title; }
         saveToGist();
-        toast('Card created. Add tasks directly on the card.');
     };
+    draftFlushers.add(commit);
+    const close = (create = false) => {
+        commit(create);
+        draftFlushers.delete(commit);
+        document.getElementById('mo-todo').remove();
+        refreshTable();
+        if (card) toast('Card saved. Add tasks directly on the card.');
+    };
+    document.getElementById('mtc').onclick = () => close();
+    document.getElementById('mo-todo').onclick = e => { if (e.target.id === 'mo-todo') close(); };
+    document.getElementById('mts').onclick = () => close(true); // closing at once means a double-click can't make a second card
+    ['input', 'change'].forEach(ev => document.getElementById('mo-todo').addEventListener(ev, () => { touched = true; commit(); }));
     document.getElementById('td-date').focus();
 }
 
@@ -1271,6 +1324,7 @@ function handleLogout(msg = '') {
     storageChars = 0;
 
     // Wipe the page, including any open pop-up, to remove decrypted text
+    draftFlushers.clear();
     document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
     const root = document.getElementById('root');
     if (root) root.innerHTML = '';
@@ -1381,7 +1435,11 @@ function renderApp() {
 
     setSyncBadge(syncState);
     showStorage();
-    document.getElementById('logout-btn').onclick = () => {
+    document.getElementById('logout-btn').onclick = async () => {
+        const btn = document.getElementById('logout-btn');
+        btn.disabled = true; btn.textContent = 'Saving…';
+        await saveNow();
+        btn.disabled = false; btn.textContent = 'Sign Out';
         if (_unsaved && !confirm('Some changes haven\'t been saved to GitHub yet and will be lost if you sign out now. Sign out anyway?')) return;
         handleLogout();
     };
@@ -1468,7 +1526,8 @@ function attachNotesTableEvents() {
 }
 
 function openNoteModal(editId) {
-    const entry = editId ? contacts.notesDiary.find(n => n.id === editId) : null;
+    let entry = editId ? contacts.notesDiary.find(n => n.id === editId) : null;
+    let createdHere = false;
     
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="mo-note">
@@ -1478,38 +1537,33 @@ function openNoteModal(editId) {
                 <input type="date" id="n-date" class="form-control" value="${esc(entry?.date||today())}"></div>
             <div class="form-group"><label>Note <span style="color:var(--danger)">*</span></label>
                 <textarea id="n-text" class="form-control" placeholder="Write your general diary entry here..." style="min-height: 200px;">${esc(entry?.text||'')}</textarea></div>
-            <div class="modal-footer">
-                <button class="btn btn-cancel" id="mc-note2">Cancel</button>
-                <button class="btn btn-primary" id="ms-note" style="width:auto;">${entry?'Save Entry':'Add Entry'}</button>
-            </div>
+            ${autosaveFooter('ms-note')}
         </div>
     </div>`);
 
     wireTextarea(document.getElementById('n-text'));
-    const close = () => { document.getElementById('mo-note').remove(); };
-    document.getElementById('mc-note').onclick = close;
-    document.getElementById('mc-note2').onclick = close;
-    document.getElementById('mo-note').onclick = e => { if (e.target.id==='mo-note') close(); };
-    
-    document.getElementById('ms-note').onclick = async () => {
-        const date = document.getElementById('n-date').value;
+    // Saved as you type. A new entry appears once it has text; emptying a new entry removes it,
+    // while an existing entry keeps its last text (delete it from the list instead).
+    const commit = () => {
+        const d = document.getElementById('n-date').value;
+        const date = DATE_RE.test(d) ? d : (entry?.date || today());
         const text = document.getElementById('n-text').value.trim();
-        if (!date || !text) { alert('Please enter both date and note.'); return; }
-        
-        const noteData = { id: entry?.id || genId(), date, text };
-        
-        if (editId) {
-            const i = contacts.notesDiary.findIndex(n => n.id === editId);
-            if (i !== -1) contacts.notesDiary[i] = noteData;
-        } else {
-            contacts.notesDiary.push(noteData);
+        if (!text) {
+            if (entry && createdHere) { contacts.notesDiary = contacts.notesDiary.filter(n => n !== entry); entry = null; createdHere = false; saveToGist(); }
+            return;
         }
-        
-        close();
+        if (!entry) { entry = { id: genId(), date, text }; contacts.notesDiary.push(entry); createdHere = true; }
+        else if (entry.text === text && entry.date === date) return;
+        else { entry.text = text; entry.date = date; }
         saveToGist();
-        refreshTable();
-        toast(editId ? 'Entry updated.' : 'Entry added.');
     };
+    draftFlushers.add(commit);
+    const close = () => { commit(); draftFlushers.delete(commit); document.getElementById('mo-note').remove(); refreshTable(); };
+    document.getElementById('mc-note').onclick = close;
+    document.getElementById('ms-note').onclick = close;
+    document.getElementById('mo-note').onclick = e => { if (e.target.id==='mo-note') close(); };
+    ['input', 'change'].forEach(ev => document.getElementById('mo-note').addEventListener(ev, commit));
+    focusAtEnd(document.getElementById('n-text'));
 }
 
 // ── REMINDER POP-UP ─────────────────────────────────────────────────────────────
@@ -1528,7 +1582,8 @@ function wireDayChips(container, dateInput) {
 }
 
 function openReminderModal(editId, presetDate) {
-    const r = editId ? (contacts.reminders || []).find(x => x.id === editId) : null;
+    let r = editId ? (contacts.reminders || []).find(x => x.id === editId) : null;
+    let createdHere = false;
     const people = contactRows().sort((a, b) => a.name.localeCompare(b.name));
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="mo-rem">
@@ -1549,46 +1604,58 @@ function openReminderModal(editId, presetDate) {
                     ${people.map(p => `<option value="${esc(p.id)}" ${r?.contactId === p.id ? 'selected' : ''}>${esc(p.name)}${p.institution ? ' · ' + esc(p.institution) : ''}</option>`).join('')}
                 </select></div>
             ${r ? `<label class="import-tick"><input type="checkbox" id="r-done" ${r.done ? 'checked' : ''}> Done</label>` : ''}
-            <div class="modal-footer">
-                ${r ? `<button class="btn-sm danger" id="mr-del" style="margin-right:auto">Delete</button>` : ''}
-                <button class="btn btn-cancel" id="mr-cancel">Cancel</button>
-                <button class="btn btn-primary" id="mr-save" style="width:auto">${r ? 'Save Reminder' : 'Add Reminder'}</button>
+            <div class="modal-footer autosave-footer">
+                ${r ? `<button class="btn-sm danger" id="mr-del">Delete</button>` : ''}
+                <span class="autosave-note">✓ Saves automatically as you type</span>
+                <button class="btn btn-primary" id="mr-save" style="width:auto">Done</button>
             </div>
         </div>
     </div>`);
     wireTextarea(document.getElementById('r-text'));
     wireDayChips(document.getElementById('r-chips'), document.getElementById('r-date'));
-    const close = () => { const m = document.getElementById('mo-rem'); if (m) m.remove(); };
-    document.getElementById('mr-x').onclick = close;
-    document.getElementById('mr-cancel').onclick = close;
-    document.getElementById('mo-rem').onclick = e => { if (e.target.id === 'mo-rem') close(); };
-    document.getElementById('mr-save').onclick = () => {
-        const date = document.getElementById('r-date').value;
+    // Saved as you type. A new reminder appears once it has text; emptying a new one removes it,
+    // while an existing one keeps its last text (use Delete instead).
+    const commit = () => {
+        const d = document.getElementById('r-date').value;
+        const date = DATE_RE.test(d) ? d : (r?.date || presetDate || today());
         const time = document.getElementById('r-time').value;
         const text = document.getElementById('r-text').value.trim();
         const contactId = document.getElementById('r-contact').value;
-        if (!date) { alert('Please pick a date.'); return; }
-        if (!text) { alert('Please write what the reminder is for.'); return; }
         const doneBox = document.getElementById('r-done');
-        const data = { id: r?.id || genId(), date, time, text, contactId, done: doneBox ? doneBox.checked : false };
         if (!contacts.reminders) contacts.reminders = [];
-        const i = contacts.reminders.findIndex(x => x.id === data.id);
-        if (i !== -1) contacts.reminders[i] = data; else contacts.reminders.push(data);
-        close();
-        refreshTable(); refreshBadges();
+        if (!text) {
+            if (r && createdHere) { contacts.reminders = contacts.reminders.filter(x => x !== r); r = null; createdHere = false; saveToGist(); }
+            return;
+        }
+        const fields = { date, time: TIME_RE.test(time) ? time : '', text, contactId, done: doneBox ? doneBox.checked : (r?.done || false) };
+        if (!r) { r = { id: genId(), ...fields }; contacts.reminders.push(r); createdHere = true; }
+        else if (Object.keys(fields).every(k => r[k] === fields[k])) return;
+        else Object.assign(r, fields);
         saveToGist();
-        toast(r ? 'Reminder updated.' : 'Reminder added.');
     };
+    draftFlushers.add(commit);
+    const close = () => {
+        commit();
+        draftFlushers.delete(commit);
+        const m = document.getElementById('mo-rem'); if (m) m.remove();
+        refreshTable(); refreshBadges();
+    };
+    document.getElementById('mr-x').onclick = close;
+    document.getElementById('mr-save').onclick = close;
+    document.getElementById('mo-rem').onclick = e => { if (e.target.id === 'mo-rem') close(); };
+    ['input', 'change'].forEach(ev => document.getElementById('mo-rem').addEventListener(ev, commit));
+    document.getElementById('r-chips').addEventListener('click', commit);
     const del = document.getElementById('mr-del');
     if (del) del.onclick = () => {
         if (!confirm('Delete this reminder?')) return;
+        draftFlushers.delete(commit);
         contacts.reminders = contacts.reminders.filter(x => x.id !== r.id);
-        close();
+        document.getElementById('mo-rem').remove();
         refreshTable(); refreshBadges();
         saveToGist();
         toast('Reminder deleted.');
     };
-    document.getElementById('r-text').focus();
+    focusAtEnd(document.getElementById('r-text'));
 }
 
 // ── CALENDAR TAB ──────────────────────────────────────────────────────────────
@@ -1845,91 +1912,141 @@ function openModal(editId) {
                 <div id="notes-list"></div>
             </div>
 
-            <div class="modal-footer">
-                <button class="btn btn-cancel" id="mc2">Cancel</button>
-                <button class="btn btn-primary" id="ms" style="width:auto;">${c?'Save Contact':'Add Contact'}</button>
-            </div>
+            ${autosaveFooter('ms')}
         </div>
     </div>`);
 
-    wireTextarea(document.getElementById('new-note-text'));
-    const close = () => { document.getElementById('mo').remove(); };
-    // Closing without saving discards edits, so ask first if anything changed.
-    const formState = () => JSON.stringify([
-        ...['f-name', 'f-inst', 'f-reg', 'f-type', 'f-last', 'f-next', 'new-note-text', 'new-rem-text'].map(id => document.getElementById(id).value),
-        renderedNotes, modalReminders
-    ]);
-    let initialState;
-    const cancel = () => {
-        if (formState() !== initialState && !confirm('Discard your changes to this contact?')) return;
-        close();
-    };
-    document.getElementById('mc').onclick = cancel;
-    document.getElementById('mc2').onclick = cancel;
-    document.getElementById('mo').onclick = e => { if (e.target.id==='mo') cancel(); };
+    const $ = id => document.getElementById(id);
+    wireTextarea($('new-note-text'));
 
-    // Notes Logic
-    // Work on copies: editing the originals would change the contact even if the pop-up is cancelled,
-    // and the next unrelated save would then send that "cancelled" edit to GitHub.
+    // Notes and reminders are edited as copies and written into your data by commit() below.
     const renderedNotes = notes.map(n => ({ ...n }));
-
-    // Reminders for this contact, also edited as copies and only stored on Save Contact.
     const modalReminders = (contacts.reminders || []).filter(r => r.contactId === contactId).map(r => ({ ...r }));
+    // A note or reminder still being typed in its box is already part of the lists above (and so
+    // saved); "Add" just clears the box so you can start the next one.
+    let pendingNote = null, pendingRem = null;
+
+    // ── Saving: everything in the pop-up is written into your data as you type. A new contact
+    // is only created once it has a name; an existing contact keeps its old name if the box is emptied.
+    let lastCommitted = null;
+    const commit = () => {
+        if (!$('mo')) return !!findContact(contactId); // already closed
+        const name = $('f-name').value.trim();
+        const where = findContact(contactId);
+        if (!name && !where) return false;
+        const old = where ? where.c : null;
+        const last = DATE_RE.test($('f-last').value) ? $('f-last').value : (old?.lastContact || today());
+        const next = DATE_RE.test($('f-next').value) ? $('f-next').value : addDays(last, 28);
+        const type = $('f-type').value;
+        const data = {
+            id: contactId, name: name || old.name,
+            institution: $('f-inst').value.trim(), region: $('f-reg').value.trim(),
+            lastContact: last, nextContact: next,
+            notes: renderedNotes.filter(n => n.text.trim()).map(n => ({ date: n.date, text: n.text.trim() }))
+        };
+        const rems = modalReminders.filter(r => r.text.trim() && r.date).map(r => ({ ...r, text: r.text.trim() }));
+        const snapshot = JSON.stringify([type, data, rems]);
+        if (snapshot === lastCommitted) return true;
+        lastCommitted = snapshot;
+        // Replace in place, or move to the other list if the type changed.
+        if (where && where.cat === type) {
+            contacts[type][contacts[type].findIndex(x => x.id === contactId)] = data;
+        } else {
+            if (where) contacts[where.cat] = contacts[where.cat].filter(x => x.id !== contactId);
+            contacts[type].push(data);
+        }
+        contacts.reminders = (contacts.reminders || []).filter(r => r.contactId !== contactId).concat(rems);
+        saveToGist();
+        return true;
+    };
+    const flush = () => { commitNoteDateEdit(false); commit(); };
+    draftFlushers.add(flush);
+    const close = () => {
+        flush();
+        if (!findContact(contactId)) {
+            const typed = renderedNotes.length || modalReminders.length || $('f-inst').value.trim() || $('f-reg').value.trim();
+            if (typed && !confirm('This new contact has no name, so it can\'t be saved. Close and discard it?')) return;
+        }
+        draftFlushers.delete(flush);
+        $('mo').remove();
+        refreshTable();
+        refreshBadges();
+    };
+    $('mc').onclick = close;
+    $('ms').onclick = close;
+    $('mo').onclick = e => { if (e.target.id === 'mo') close(); };
+    // Any typing, picking or clicking in the pop-up saves it (the upload waits for a pause).
+    ['input', 'change', 'click'].forEach(ev => $('mo').addEventListener(ev, () => commit()));
+
+    // ── Reminders
     const updateRemindersUI = () => {
         modalReminders.sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)));
-        document.getElementById('rem-list').innerHTML = modalReminders.map((r, i) => `
+        $('rem-list').innerHTML = modalReminders.map((r, i) => `
             <div class="rem-entry" style="${r.done ? 'opacity:.45' : ''}">
                 <span class="when">⏰ ${esc(fmtReminderWhen(r))}</span>
                 <span class="what" style="${r.done ? 'text-decoration:line-through' : ''}">${esc(r.text)}</span>
                 <span class="rem-del" data-index="${i}" title="Delete reminder">&times;</span>
             </div>`).join('');
         document.querySelectorAll('#rem-list .rem-del').forEach(el => el.onclick = () => {
-            modalReminders.splice(parseInt(el.dataset.index), 1);
+            const [gone] = modalReminders.splice(parseInt(el.dataset.index), 1);
+            if (gone === pendingRem) { pendingRem = null; $('new-rem-text').value = ''; $('new-rem-time').value = ''; }
             updateRemindersUI();
         });
     };
-    // Adds the reminder typed in the boxes; returns false if something required is missing.
-    const addPendingReminder = () => {
-        const text = document.getElementById('new-rem-text').value.trim();
-        const date = document.getElementById('new-rem-date').value;
-        if (!text) return true;
-        if (!date) { alert('Please pick a date for the reminder.'); return false; }
-        modalReminders.push({ id: genId(), date, time: document.getElementById('new-rem-time').value, text, contactId, done: false });
-        document.getElementById('new-rem-text').value = '';
-        document.getElementById('new-rem-time').value = '';
+    const syncPendingReminder = () => {
+        const text = $('new-rem-text').value.trim();
+        if (!text) {
+            if (pendingRem) { modalReminders.splice(modalReminders.indexOf(pendingRem), 1); pendingRem = null; updateRemindersUI(); }
+            return;
+        }
+        const fields = { date: $('new-rem-date').value || pendingRem?.date || today(), time: $('new-rem-time').value, text };
+        if (!pendingRem) { pendingRem = { id: genId(), contactId, done: false, ...fields }; modalReminders.push(pendingRem); }
+        else Object.assign(pendingRem, fields);
         updateRemindersUI();
-        return true;
     };
-    wireDayChips(document.getElementById('new-rem-chips'), document.getElementById('new-rem-date'));
-    document.getElementById('add-rem-btn').onclick = addPendingReminder;
-    document.getElementById('new-rem-text').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addPendingReminder(); } };
+    const finishReminder = () => {
+        syncPendingReminder();
+        if (!pendingRem) return;
+        pendingRem = null;
+        $('new-rem-text').value = '';
+        $('new-rem-time').value = '';
+    };
+    wireDayChips($('new-rem-chips'), $('new-rem-date'));
+    $('new-rem-chips').addEventListener('click', syncPendingReminder);
+    ['new-rem-text', 'new-rem-date', 'new-rem-time'].forEach(id => { $(id).addEventListener('input', syncPendingReminder); $(id).addEventListener('change', syncPendingReminder); });
+    $('add-rem-btn').onclick = finishReminder;
+    $('new-rem-text').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); finishReminder(); } };
     updateRemindersUI();
+
+    // ── Notes
     const newestNoteDate = () => renderedNotes.reduce((m, n) => (n.date > m ? n.date : m), '');
     // Keep Last Contact in step with the newest note: if it came from the newest note, it follows
     // that note when its date changes or it's deleted, and a newer note always moves it forward.
     // A Last Contact typed in by hand that's newer than every note is left alone. Whenever Last
     // Contact changes, Next Contact becomes Last Contact + 28 days.
+    // A new contact's Last Contact starts as today only as a default, so notes may move it either way.
+    let lastIsDefault = !c;
     const followNotes = (prevNewest) => {
         const newest = newestNoteDate();
-        const lastInp = document.getElementById('f-last');
-        const nextInp = document.getElementById('f-next');
+        const lastInp = $('f-last');
         const oldLast = lastInp.value;
         if (!newest || newest === oldLast) return;
-        if (oldLast && oldLast !== prevNewest && newest < oldLast) return;
+        if (oldLast && oldLast !== prevNewest && newest < oldLast && !lastIsDefault) return;
         lastInp.value = newest;
-        nextInp.value = addDays(newest, 28);
+        $('f-next').value = addDays(newest, 28);
     };
     let dateEditStart = null; // newest note date before a note's date was changed, until that change is applied
-    const commitNoteDateEdit = () => {
+    const commitNoteDateEdit = (rerender = true) => {
         if (dateEditStart === null) return;
         const prev = dateEditStart;
         dateEditStart = null;
         followNotes(prev);
-        updateNotesUI();
+        if (rerender) updateNotesUI();
+        commit();
     };
     const updateNotesUI = () => {
         renderedNotes.sort(byDateDesc);
-        document.getElementById('notes-list').innerHTML = renderedNotes.map((n, i) => `
+        $('notes-list').innerHTML = renderedNotes.map((n, i) => `
             <div class="note-entry">
                 <input type="date" class="note-date-input" data-index="${i}" value="${esc(n.date)}" max="${today()}" title="Change the date of this note">
                 <div class="note-text" data-index="${i}">${esc(n.text)}</div>
@@ -1938,7 +2055,7 @@ function openModal(editId) {
         `).join('');
         
         // The date is stored as soon as it changes; Last Contact and the order catch up when
-        // you leave the box (or press Save), so half-typed dates never move anything.
+        // you leave the box, so half-typed dates never move anything.
         document.querySelectorAll('#notes-list .note-date-input').forEach(inp => {
             const idx = parseInt(inp.dataset.index);
             inp.onchange = () => {
@@ -1946,126 +2063,93 @@ function openModal(editId) {
                 const v = inp.value;
                 if (v && v <= today()) renderedNotes[idx].date = v;
             };
-            inp.onblur = commitNoteDateEdit;
+            inp.onblur = () => commitNoteDateEdit();
             inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
         });
 
-        document.querySelectorAll('.note-text').forEach(el => {
+        document.querySelectorAll('#notes-list .note-text').forEach(el => {
             el.onclick = () => {
                 const idx = parseInt(el.dataset.index);
-                const currentTxt = renderedNotes[idx].text;
+                const note = renderedNotes[idx];
+                const currentTxt = note.text;
                 const area = document.createElement('textarea');
                 area.className = 'note-edit-area';
                 area.value = currentTxt;
                 el.replaceWith(area);
                 wireTextarea(area);
                 area.focus();
-                area.onblur = () => {
-                    renderedNotes[idx].text = area.value.trim() || currentTxt;
-                    updateNotesUI();
+                area.oninput = () => {
+                    if (area.value.trim()) note.text = area.value.trim();
+                    if (note === pendingNote) $('new-note-text').value = note.text;
                 };
+                area.onblur = () => updateNotesUI();
                 area.onkeydown = (e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); area.blur(); }
-                    if (e.key === 'Escape') { area.value = currentTxt; area.blur(); }
+                    if (e.key === 'Escape') { note.text = currentTxt; area.value = currentTxt; commit(); area.blur(); }
                 };
             };
         });
 
-        document.querySelectorAll('.note-delete').forEach(el => {
+        document.querySelectorAll('#notes-list .note-delete').forEach(el => {
             el.onclick = () => {
                 const prevNewest = newestNoteDate();
-                renderedNotes.splice(parseInt(el.dataset.index), 1);
+                const [gone] = renderedNotes.splice(parseInt(el.dataset.index), 1);
+                if (gone === pendingNote) { pendingNote = null; $('new-note-text').value = ''; }
                 followNotes(prevNewest);
                 updateNotesUI();
             };
         });
     };
     
-    // Date for a new note: the chosen day, which can't be in the future.
+    // Date for a new note: the chosen day, never in the future.
     const newNoteDate = () => {
-        const d = document.getElementById('new-note-date').value || today();
-        if (d > today()) { alert('A note can\'t be dated in the future. Use a reminder for things that haven\'t happened yet.'); return null; }
-        return d;
+        const d = $('new-note-date').value;
+        return d && DATE_RE.test(d) && d <= today() ? d : today();
+    };
+    const syncPendingNote = () => {
+        const txt = $('new-note-text').value.trim();
+        const prevNewest = newestNoteDate();
+        if (!txt) {
+            if (pendingNote) { renderedNotes.splice(renderedNotes.indexOf(pendingNote), 1); pendingNote = null; followNotes(prevNewest); updateNotesUI(); }
+            return;
+        }
+        const date = newNoteDate();
+        if (!pendingNote) { pendingNote = { date, text: txt }; renderedNotes.unshift(pendingNote); }
+        else { pendingNote.text = txt; pendingNote.date = date; }
+        followNotes(prevNewest);
+        updateNotesUI();
+    };
+    $('new-note-text').addEventListener('input', syncPendingNote);
+    $('new-note-date').onchange = () => {
+        if ($('new-note-date').value > today()) {
+            alert('A note can\'t be dated in the future. Use a reminder for things that haven\'t happened yet.');
+            $('new-note-date').value = today();
+        }
+        syncPendingNote();
     };
     document.querySelectorAll('.note-chip').forEach(b => b.onclick = () => {
-        document.getElementById('new-note-date').value = addDays(today(), -parseInt(b.dataset.ago));
+        $('new-note-date').value = addDays(today(), -parseInt(b.dataset.ago));
+        syncPendingNote();
     });
-    document.getElementById('add-note-btn').onclick = () => {
-        const txt = document.getElementById('new-note-text').value.trim();
-        if (txt) {
-            const date = newNoteDate();
-            if (!date) return;
-            const prevNewest = newestNoteDate();
-            renderedNotes.unshift({ date, text: txt });
-            document.getElementById('new-note-text').value = '';
-            followNotes(prevNewest);
-            updateNotesUI();
-        }
+    $('add-note-btn').onclick = () => {
+        syncPendingNote();
+        if (!pendingNote) return;
+        pendingNote = null;
+        $('new-note-text').value = '';
+        $('new-note-text').style.height = 'auto';
     };
     // Changing Last Contact by hand always moves Next Contact to 28 days later. Listening to both
     // events covers browsers that only report a typed date when you leave the box.
     const lastChanged = (e) => {
+        lastIsDefault = false;
         const lastVal = e.target.value;
-        if (lastVal && DATE_RE.test(lastVal)) document.getElementById('f-next').value = addDays(lastVal, 28);
+        if (lastVal && DATE_RE.test(lastVal)) $('f-next').value = addDays(lastVal, 28);
     };
-    document.getElementById('f-last').oninput = lastChanged;
-    document.getElementById('f-last').onchange = lastChanged;
+    $('f-last').oninput = lastChanged;
+    $('f-last').onchange = lastChanged;
     updateNotesUI();
-    initialState = formState();
-
-
-    document.getElementById('ms').onclick = async () => {
-        const name = document.getElementById('f-name').value.trim();
-        const inst = document.getElementById('f-inst').value.trim();
-        const reg  = document.getElementById('f-reg').value.trim();
-        const type = document.getElementById('f-type').value;
-        if (!name) { alert('Please enter a name.'); return; }
-        if (!addPendingReminder()) return; // a reminder typed but not yet added counts as added
-        commitNoteDateEdit();               // a note date changed but not yet applied
-
-        // A note typed but not yet added counts as added, and moves the dates the same way.
-        const pendingNote = document.getElementById('new-note-text').value.trim();
-        if (pendingNote) {
-            const date = newNoteDate();
-            if (!date) return;
-            const prevNewest = newestNoteDate();
-            renderedNotes.unshift({ date, text: pendingNote });
-            document.getElementById('new-note-text').value = '';
-            followNotes(prevNewest);
-            updateNotesUI();
-        }
-
-        const last = document.getElementById('f-last').value;
-        const next = document.getElementById('f-next').value;
-        if (!last) { alert('Please enter the last contact date.'); return; }
-        if (!next) { alert('Please enter the next contact date.'); return; }
-        
-        const contactData = { 
-            id: contactId,
-            name, institution: inst, region: reg,
-            lastContact: last, nextContact: next, 
-            notes: renderedNotes 
-        };
-
-        // Replace in place, or move to the other list if the type changed.
-        const where = findContact(contactId);
-        if (where && where.cat === type) {
-            const i = contacts[type].findIndex(x => x.id === contactId);
-            contacts[type][i] = contactData;
-        } else {
-            if (where) contacts[where.cat] = contacts[where.cat].filter(x => x.id !== contactId);
-            contacts[type].push(contactData);
-        }
-        contacts.reminders = (contacts.reminders || []).filter(r => r.contactId !== contactId).concat(modalReminders);
-
-        close();
-        saveToGist();
-        refreshTable();
-        refreshBadges();
-        toast(editId ? 'Contact updated.' : 'Contact added.');
-    };
+    if (!c) $('f-name').focus();
 }
-
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 // Refuse to run inside another website's frame, so a hostile page can't overlay it and

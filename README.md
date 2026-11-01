@@ -34,6 +34,7 @@ There is no backend. The app is a single HTML file.
 - **Markdown export** — Download your entire database as a structured `.md` file.
 - **Export for Claude / Import** — Download an unencrypted JSON copy for Claude to edit, then import it back. Imports are validated, show exactly what will be added, changed or deleted, and need confirmation before anything is saved.
 - **Auto-logout** — Signs you out after 3 hours of inactivity, with a warning 1 minute before.
+- **Auto-save everywhere** — There are no Save buttons. Everything you type — contact details, notes (even before you press Add), reminders, diary entries, To Do cards and tasks — is stored as you type and uploaded to GitHub after a 1.5-second pause. Closing a pop-up any way (Done, ×, clicking outside) keeps what you typed; to undo something, delete it. A new contact is created once it has a name.
 - **Conflict protection** — Saving pauses instead of overwriting if your CRM was saved from another device or tab in the meantime.
 - **Tokyo Night theme** — Dark UI with the Tokyo Night color palette.
 
@@ -64,7 +65,7 @@ The encryption key is derived from your GitHub PAT. A different PAT produces a d
 - **On sign-out** the app drops its copy of your data, the token and any pending saves, and clears the page including any open pop-up. JavaScript can't overwrite memory directly, so the browser frees the data on its own schedule.
 - No data is rendered to the page until authentication succeeds and decryption completes.
 - **Decryption Safeguard:** If decryption fails (wrong token or modified Gist), the app refuses to load, so an empty CRM can never overwrite your real data.
-- **Unsaved-changes warning:** the browser asks before you close the tab, and the app asks before you sign out, if changes haven't reached GitHub yet.
+- **Unsaved-changes protection:** closing the tab or signing out first stores anything half-typed. Signing out waits for it to upload; the browser asks before you close the tab, and the app asks before signing out, only if GitHub couldn't be reached.
 
 ### Content Security Policy & XSS Prevention
 
@@ -79,8 +80,8 @@ The Content Security Policy blocks external scripts, external images, fonts, for
 - **Pagination:** The app pages through the GitHub API (`per_page=100`) to find the CRM Gist regardless of how many other Gists you host.
 - **No stale reads:** GitHub requests bypass the browser cache, so the app always sees the latest saved version.
 - **Conflict protection:** Before every save, the app checks that the Gist hasn't been saved from somewhere else since this page last loaded or saved it. If it has, saving pauses and you choose: save this page's version to a file, load the latest version (then use **Import** to bring your changes back in, seeing exactly what changes), or overwrite.
-- **Retries:** If a save fails (e.g. you're offline), the badge shows "Sync Failed — retrying" and the app retries every 5 seconds. A save whose reply was lost but which actually reached GitHub is recognised and not reported as a conflict.
-- **One save at a time:** Edits are saved 0.4 s after the last change. Saves never overlap, and a save started before signing out never writes after it.
+- **Retries:** If a save fails (e.g. you're offline), the badge shows "Sync Failed — retrying" and the app retries after 5 seconds, then waits longer each time (up to 1 minute) so it never floods GitHub. A save whose reply was lost but which actually reached GitHub is recognised and not reported as a conflict.
+- **One save at a time:** Edits are uploaded 1.5 s after the last change, which keeps well within GitHub's limits on how often content can change (typing a whole note is usually a single upload). Saves never overlap, and a save started before signing out never writes after it.
 
 ### Threat Model
 
