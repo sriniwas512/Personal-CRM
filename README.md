@@ -31,7 +31,7 @@ There is no backend. The app is a single HTML file.
 - **To Do cards** — Dated cards with checklists.
 - **Filter, search, sort** — Find contacts by name, institution, region, or note content.
 - **Singapore time** — "Today", note dates, reminder times, overdue status and the 28-day "next contact" default all use Singapore time (UTC+8), whatever time zone your device is set to.
-- **Markdown export** — Download your entire database as a structured `.md` file.
+- **Markdown export** — Download your entire database as a structured `.md` file. The layout stays stable so older backups and new ones match: Professional Contacts, Personal Contacts, General Notes Diary and To Do List, in that order, then Reminders (added at the end so nothing before it moved).
 - **Export for Claude / Import** — Download an unencrypted JSON copy for Claude to edit, then import it back. Imports are validated, show exactly what will be added, changed or deleted, and need confirmation before anything is saved.
 - **Auto-logout** — Signs you out after 3 hours of inactivity, with a warning 1 minute before.
 - **Auto-save everywhere** — There are no Save buttons. Everything you type — contact details, notes (even before you press Add), reminders, diary entries, To Do cards and tasks — is stored as you type and uploaded to GitHub after a 1.5-second pause. Closing a pop-up any way (Done, ×, clicking outside) keeps what you typed; to undo something, delete it. A new contact is created once it has a name.

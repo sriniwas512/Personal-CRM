@@ -974,27 +974,22 @@ function openTodoModal() {
 }
 
 function downloadMarkdown() {
+    // Keep this layout stable: earlier backups use exactly these sections, in this order.
+    // Sections added later (Reminders) go at the end so everything before them is unchanged.
     let md = `# Personal CRM Export - ${today()}\n\n`;
-    md += `## Contacts\n\n`;
-    contactRows().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
-        md += `### ${c.name}\n- **Type**: ${TYPES[c._cat]}\n- **Institution**: ${c.institution || '—'}\n- **Region**: ${c.region || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
-        if (c.notes && c.notes.length > 0) {
-            md += `- **Notes Log**:\n`;
-            c.notes.forEach(n => {
-                md += `    - [${fmtDate(n.date)}] ${n.text.replace(/\n/g, ' ')}\n`;
-            });
-        }
-        md += `\n`;
-    });
-
-    if (contacts.reminders && contacts.reminders.length > 0) {
-        md += `---\n\n## Reminders\n\n`;
-        [...contacts.reminders].sort((a, b) => reminderKey(a).localeCompare(reminderKey(b))).forEach(r => {
-            const who = r.contactId && findContact(r.contactId);
-            md += `- [${r.done ? 'x' : ' '}] ${fmtReminderWhen(r)} — ${r.text.replace(/\n/g, ' ')}${who ? ` (${who.c.name})` : ''}\n`;
+    ['professional', 'personal'].forEach(tab => {
+        md += `## ${tab.charAt(0).toUpperCase() + tab.slice(1)} Contacts\n\n`;
+        contacts[tab].forEach(c => {
+            md += `### ${c.name}\n- **Institution**: ${c.institution || '—'}\n- **Region**: ${c.region || '—'}\n- **Last Contact**: ${fmtDate(c.lastContact)}\n- **Next contact**: ${fmtDate(c.nextContact)}\n`;
+            if (c.notes && c.notes.length > 0) {
+                md += `- **Notes Log**:\n`;
+                c.notes.forEach(n => {
+                    md += `    - [${fmtDate(n.date)}] ${n.text.replace(/\n/g, ' ')}\n`;
+                });
+            }
+            md += `\n`;
         });
-        md += `\n`;
-    }
+    });
     
     if (contacts.notesDiary && contacts.notesDiary.length > 0) {
         md += `--- \n\n## General Notes Diary\n\n`;
@@ -1014,6 +1009,15 @@ function downloadMarkdown() {
             });
             md += `\n`;
         });
+    }
+
+    if (contacts.reminders && contacts.reminders.length > 0) {
+        md += `---\n\n## Reminders\n\n`;
+        [...contacts.reminders].sort((a, b) => reminderKey(a).localeCompare(reminderKey(b))).forEach(r => {
+            const who = r.contactId && findContact(r.contactId);
+            md += `- [${r.done ? 'x' : ' '}] ${fmtReminderWhen(r)} — ${r.text.replace(/\n/g, ' ')}${who ? ` (${who.c.name})` : ''}\n`;
+        });
+        md += `\n`;
     }
 
     const blob = new Blob([md], { type: 'text/markdown' });
