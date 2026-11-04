@@ -185,6 +185,9 @@
         .cal-item.overdue { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
         .cal-item.done { opacity: .5; text-decoration: line-through; }
         .cal-item:hover { filter: brightness(1.25); }
+        .cal-check { width: 12px; height: 12px; margin: 0 4px 0 0; vertical-align: -2px; accent-color: var(--success); cursor: pointer; }
+        .cal-day-list .cal-check { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; }
+        .rem-check { width: 15px; height: 15px; accent-color: var(--success); cursor: pointer; flex-shrink: 0; }
         .cal-more { font-size: 11px; color: var(--text-muted); padding: 0 6px; }
         .cal-more:hover { color: var(--primary); }
         .storage-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 28px; }
@@ -196,6 +199,7 @@
             .cal-grid { gap: 2px; }
             .cal-day { min-height: 64px; padding: 3px; }
             .cal-item { font-size: 9px; padding: 1px 3px; }
+            .cal-grid .cal-check { display: none; } /* too small to tap on a phone: tick them in the day list */
             .cal-wd { font-size: 9px; padding: 2px; }
             .cal-title { min-width: 0; font-size: 15px; }
         }
@@ -1682,12 +1686,20 @@ function calendarItems() {
         .forEach(c => add(c.nextContact, { kind: 'contact', c }));
     return byDate;
 }
+// Ticking a reminder's box marks it done: it stops showing as overdue (red) and leaves the due count.
+function toggleReminderDone(id, done) {
+    const r = (contacts.reminders || []).find(x => x.id === id);
+    if (!r) return;
+    r.done = done;
+    refreshTable(); refreshBadges();
+    saveToGist();
+}
 function calItemHtml(item, t) {
     if (item.kind === 'rem') {
         const r = item.r, who = r.contactId && findContact(r.contactId);
         const cls = r.done ? ' done' : (r.date < t ? ' overdue' : '');
         const label = (r.time ? r.time + ' ' : '') + r.text.split('\n')[0] + (who ? ' — ' + who.c.name : '');
-        return `<div class="cal-item cal-rem${cls}" data-rem="${esc(r.id)}" title="${esc(fmtReminderWhen(r) + ' — ' + r.text)}">⏰ ${esc(label)}</div>`;
+        return `<div class="cal-item cal-rem${cls}" data-rem="${esc(r.id)}" title="${esc(fmtReminderWhen(r) + ' — ' + r.text)}"><input type="checkbox" class="cal-check" data-check="${esc(r.id)}" ${r.done ? 'checked' : ''} title="Done / ignore — stops it showing as overdue (untick to undo)" aria-label="Mark reminder done">⏰ ${esc(label)}</div>`;
     }
     const c = item.c, overdue = c.nextContact < t;
     return `<div class="cal-item cal-contact${overdue ? ' overdue' : ''}" data-contact="${esc(c.id)}" title="${esc('Next contact: ' + c.name)}">👤 ${esc(c.name)}</div>`;
@@ -1733,6 +1745,8 @@ function attachCalendarEvents() {
     document.getElementById('cal-next').onclick = () => go(addMonths(first, 1));
     document.getElementById('cal-today').onclick = () => go(monthStart(today()));
     document.querySelectorAll('.cal-day').forEach(cell => cell.onclick = e => {
+        const box = e.target.closest('[data-check]');
+        if (box) return toggleReminderDone(box.dataset.check, box.checked);
         // On a phone the items are too small to tap, so a day opens its full list instead.
         if (window.matchMedia('(max-width: 640px)').matches) return openDayModal(cell.dataset.date);
         const rem = e.target.closest('[data-rem]'), who = e.target.closest('[data-contact]'), more = e.target.closest('[data-day]');
@@ -1758,6 +1772,8 @@ function openDayModal(d) {
     document.getElementById('md-x').onclick = close;
     document.getElementById('mo-day').onclick = e => {
         if (e.target.id === 'mo-day') return close();
+        const box = e.target.closest('[data-check]');
+        if (box) { toggleReminderDone(box.dataset.check, box.checked); close(); return openDayModal(d); }
         const rem = e.target.closest('[data-rem]'), who = e.target.closest('[data-contact]');
         if (rem) { close(); openReminderModal(rem.dataset.rem); }
         else if (who) { close(); openModal(who.dataset.contact); }
@@ -1987,10 +2003,16 @@ function openModal(editId) {
         modalReminders.sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)));
         $('rem-list').innerHTML = modalReminders.map((r, i) => `
             <div class="rem-entry" style="${r.done ? 'opacity:.45' : ''}">
+                <input type="checkbox" class="rem-check" data-index="${i}" ${r.done ? 'checked' : ''} title="Done / ignore — stops it showing as overdue (untick to undo)" aria-label="Mark reminder done">
                 <span class="when">⏰ ${esc(fmtReminderWhen(r))}</span>
                 <span class="what" style="${r.done ? 'text-decoration:line-through' : ''}">${esc(r.text)}</span>
                 <span class="rem-del" data-index="${i}" title="Delete reminder">&times;</span>
             </div>`).join('');
+        document.querySelectorAll('#rem-list .rem-check').forEach(el => el.onchange = () => {
+            modalReminders[parseInt(el.dataset.index)].done = el.checked;
+            updateRemindersUI();
+            commit();
+        });
         document.querySelectorAll('#rem-list .rem-del').forEach(el => el.onclick = () => {
             const [gone] = modalReminders.splice(parseInt(el.dataset.index), 1);
             if (gone === pendingRem) { pendingRem = null; $('new-rem-text').value = ''; $('new-rem-time').value = ''; }
