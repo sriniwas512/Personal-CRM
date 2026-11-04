@@ -199,7 +199,6 @@
         .attn-tag.late { background: rgba(247, 118, 142, 0.15); color: var(--danger); }
         .attn-tag.due { background: rgba(224, 175, 104, 0.15); color: #e0af68; }
         .attn-text { min-width: 0; word-break: break-word; }
-        .attn-hint { color: var(--text-muted); font-size: 11px; }
         .cal-more { font-size: 11px; color: var(--text-muted); padding: 0 6px; }
         .cal-more:hover { color: var(--primary); }
         .storage-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 28px; }
@@ -533,7 +532,7 @@ async function loadFromGist() {
 // pause keeps well inside GitHub's limits on how often content can change). Only one save talks to GitHub at a time;
 // edits made meanwhile go out in the next one. Before writing, the Gist is checked so a
 // newer version saved from another device or tab is never overwritten without asking.
-const APP_VERSION = '2026-11-04b'; // shown at the bottom of the app, to check a reload picked up the latest version
+const APP_VERSION = '2026-11-04c'; // shown at the bottom of the app, to check a reload picked up the latest version
 const STORAGE_WARN_CHARS = 8 * 1024 * 1024; // GitHub stops serving Gist files to the app above ~10 MB
 const SAVE_DELAY_MS = 1500;
 let _saveTimer = null;
@@ -787,29 +786,16 @@ function overdueCount() { return contactRows().filter(c => c.nextContact && getS
 // A reminder is a date, an optional time (Singapore time) and a message, optionally linked to a contact.
 const reminderKey = r => r.date + ' ' + (r.time || '99:99'); // undated-time reminders sort after timed ones that day
 // Everything behind the Calendar tab's red number: reminders due today or earlier that aren't ticked,
-// and contacts whose Next Contact date has passed — from any month, not only the one on screen.
-// The "Needs attention" list at the top of the Calendar shows exactly these, so the number never
-// points at something you can't see.
+// from any month, not only the one on screen. The "Needs attention" list at the top of the Calendar
+// shows exactly these, so the number never points at something you can't see. (Overdue contacts are
+// counted on the Contacts tab instead and have no tick box.)
 function attentionItems() {
     const t = today();
     const rems = (contacts.reminders || []).filter(r => !r.done && r.date && r.date <= t)
         .sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)));
-    const people = contactRows().filter(c => c.nextContact && c.nextContact < t)
-        .sort((a, b) => a.nextContact.localeCompare(b.nextContact));
-    return { rems, people, count: rems.length + people.length };
+    return { rems, count: rems.length };
 }
 function dueReminderCount() { return attentionItems().count; }
-// Ticking an overdue contact means "I've been in touch today": Last Contact = today, Next = +28 days.
-function markContactedToday(id) {
-    const f = findContact(id);
-    if (!f) return;
-    const t = today();
-    f.c.lastContact = t;
-    f.c.nextContact = addDays(t, 28);
-    refreshTable(); refreshBadges();
-    saveToGist();
-    toast(`${f.c.name}: marked as contacted today. Next Contact moved to ${fmtDate(f.c.nextContact)}.`, 5000);
-}
 function nextReminderFor(contactId) {
     return (contacts.reminders || []).filter(r => r.contactId === contactId && !r.done && r.date)
         .sort((a, b) => reminderKey(a).localeCompare(reminderKey(b)))[0] || null;
@@ -1741,7 +1727,7 @@ function calItemHtml(item, t) {
     return `<div class="cal-item cal-contact${overdue ? ' overdue' : ''}" data-contact="${esc(c.id)}" title="${esc('Next contact: ' + c.name)}">👤 ${esc(c.name)}</div>`;
 }
 function attentionHtml() {
-    const { rems, people, count } = attentionItems();
+    const { rems, count } = attentionItems();
     if (!count) return '';
     const t = today();
     const remRow = r => {
@@ -1751,12 +1737,9 @@ function attentionHtml() {
             <span class="attn-tag ${late ? 'late' : 'due'}">${late ? 'Overdue' : 'Today'}</span>
             <span class="attn-text">⏰ ${esc(fmtReminderWhen(r))} — ${esc(r.text.split('\n')[0])}${who ? ' (' + esc(who.c.name) + ')' : ''}</span></label>`;
     };
-    const personRow = c => `<label class="attn-row"><input type="checkbox" class="attn-check" data-attn-contact="${esc(c.id)}">
-            <span class="attn-tag late">Overdue</span>
-            <span class="attn-text">👤 Get in touch with ${esc(c.name)} — was due ${esc(fmtDate(c.nextContact))} <em class="attn-hint">(tick = contacted today)</em></span></label>`;
     return `<div class="attn">
-        <div class="attn-head"><b>Needs attention (${count})</b><span class="attn-sub">Everything behind the red number, from any month. Tick each one when it's done.</span><button class="btn-sm" id="attn-all">Tick all</button></div>
-        ${rems.map(remRow).join('')}${people.map(personRow).join('')}
+        <div class="attn-head"><b>Needs attention (${count})</b><span class="attn-sub">Reminders that are due or overdue, from any month. Tick each one when it's done.</span><button class="btn-sm" id="attn-all">Tick all</button></div>
+        ${rems.map(remRow).join('')}
     </div>`;
 }
 function renderCalendar() {
@@ -1800,14 +1783,11 @@ function attachCalendarEvents() {
     document.getElementById('cal-next').onclick = () => go(addMonths(first, 1));
     document.getElementById('cal-today').onclick = () => go(monthStart(today()));
     document.querySelectorAll('[data-attn-rem]').forEach(b => b.onchange = () => toggleReminderDone(b.dataset.attnRem, true));
-    document.querySelectorAll('[data-attn-contact]').forEach(b => b.onchange = () => markContactedToday(b.dataset.attnContact));
     const all = document.getElementById('attn-all');
     if (all) all.onclick = () => {
-        const { rems, people, count } = attentionItems();
-        if (!confirm(`Mark all ${count} as done?` + (people.length ? `\n\n${people.length} overdue contact${people.length === 1 ? '' : 's'} will be marked as contacted today (Next Contact moves 28 days ahead).` : ''))) return;
-        const t = today();
+        const { rems, count } = attentionItems();
+        if (!confirm(`Mark all ${count} reminder${count === 1 ? '' : 's'} as done?`)) return;
         rems.forEach(r => { r.done = true; });
-        people.forEach(c => { const f = findContact(c.id); if (f) { f.c.lastContact = t; f.c.nextContact = addDays(t, 28); } });
         refreshTable(); refreshBadges();
         saveToGist();
         toast('All marked done.');
